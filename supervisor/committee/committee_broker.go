@@ -65,6 +65,7 @@ func NewBrokerCommitteeMod(Ip_nodeTable map[uint64]map[uint64]string, Ss *signal
 
 func (bcm *BrokerCommitteeMod) HandleOtherMessage([]byte) {}
 
+// get shard id by address
 func (bcm *BrokerCommitteeMod) fetchModifiedMap(key string) uint64 {
 	return uint64(utils.Addr2Shard(key))
 }
@@ -145,6 +146,7 @@ func (bcm *BrokerCommitteeMod) MsgSendingControl() {
 
 }
 
+// handle block information when received CBlockInfo message(pbft node commited)pbftノードがコミットしたとき
 func (bcm *BrokerCommitteeMod) HandleBlockInfo(b *message.BlockInfoMsg) {
 	bcm.sl.Slog.Printf("received from shard %d in epoch %d.\n", b.SenderShardID, b.Epoch)
 	if b.BlockBodyLength == 0 {

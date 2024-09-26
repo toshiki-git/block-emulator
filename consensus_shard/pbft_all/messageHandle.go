@@ -72,6 +72,7 @@ func (p *PbftConsensusNode) Propose() {
 					log.Panic()
 				}
 				msg_send := message.MergeMessage(message.CPrePrepare, ppbyte)
+				// Broadcast the "preprepare" / block content message to all nodes in the same shard
 				networks.Broadcast(p.RunningNode.IPaddr, p.getNeighborNodes(), msg_send)
 				networks.TcpDial(msg_send, p.RunningNode.IPaddr)
 				p.pbftStage.Store(2)

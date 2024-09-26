@@ -239,7 +239,7 @@ func (p *PbftConsensusNode) TcpListen() {
 		log.Panic(err)
 	}
 	for {
-		conn, err := p.tcpln.Accept()
+		conn, err := p.tcpln.Accept() // this is a blocking function awaiting for a connection
 		if err != nil {
 			return
 		}

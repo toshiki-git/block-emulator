@@ -1,45 +1,55 @@
+import os
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-# 读取CSV文件
-file_path = './expTest/result/supervisor_measureOutput/Tx_Details.csv'  # 替换为你的CSV文件路径
+plot_save_dir = './expTest/result/figure'
+
+if not os.path.exists(plot_save_dir):
+    os.makedirs(plot_save_dir)
+
+# Read the CSV file
+file_path = './expTest/result/supervisor_measureOutput/Tx_Details.csv'  # Replace with your CSV file path
 df = pd.read_csv(file_path)
 
-# 提取 "Confirmed latency of this tx (ms)" 列
+# Extract the "Confirmed latency of this tx (ms)" column
 latency_column = 'Confirmed latency of this tx (ms)'
 latency_data_1 = df[latency_column]
 
-# 提取第二组数据（'Broker1 Tx commit timestamp (not a broker tx -> nil)' 列不为空）
+# Extract the second set of data (where the 'Broker1 Tx commit timestamp (not a broker tx -> nil)' column is not empty)
 timestamp_column = 'Broker1 Tx commit timestamp (not a broker tx -> nil)'
 latency_data_2 = df[df[timestamp_column].notna()][latency_column]
 
-# 提取第三组数据（'Broker1 Tx commit timestamp (not a broker tx -> nil)' 列为空）
+# Extract the third set of data (where the 'Broker1 Tx commit timestamp (not a broker tx -> nil)' column is empty)
 latency_data_3 = df[df[timestamp_column].isna()][latency_column]
 
-# 设置绘图风格
+# Set the plotting style
 sns.set(style='whitegrid')
 
-# 创建一个绘图对象
+# Create a plot object
 plt.figure(figsize=(10, 6))
 
-# 绘制核密度估计曲线
+# Plot the Kernel Density Estimation (KDE) curves
 density_kwargs = {'lw': 2, 'alpha': 0.7}
 
-# 所有交易
+# All transactions
 sns.kdeplot(latency_data_1, color='blue', label='All Txs', **density_kwargs)
 
-# Broker交易
+# Broker transactions
 sns.kdeplot(latency_data_2, color='orange', label='Broker Txs (CTXs)', **density_kwargs)
 
-# InnerShard交易
+# InnerShard transactions
 sns.kdeplot(latency_data_3, color='green', label='InnerShard Txs', **density_kwargs)
 
-# 添加图例和标题
+# Add legend and title
 plt.legend()
 plt.title('Distribution of Confirmed Latency of This Tx (ms)')
 plt.xlabel('Confirmed Latency (ms)')
 plt.ylabel('Density')
 
-# 显示图表
+# Save the plot
+output_path = os.path.join(plot_save_dir, 'tx_distribution_brokerMethod.png')
+plt.savefig(output_path)
+
+# Show the plot
 plt.show()

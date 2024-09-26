@@ -124,6 +124,7 @@ func (rthm *RelayCommitteeModule) MsgSendingControl() {
 }
 
 // no operation here
+// handle block information when received CBlockInfo message(pbft node commited)pbftノードがコミットしたとき
 func (rthm *RelayCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	rthm.sl.Slog.Printf("received from shard %d in epoch %d.\n", b.SenderShardID, b.Epoch)
 }

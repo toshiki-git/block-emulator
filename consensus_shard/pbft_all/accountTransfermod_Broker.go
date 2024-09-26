@@ -61,9 +61,9 @@ func (cphm *CLPAPbftInsideExtraHandleMod_forBroker) sendAccounts_and_Txs() {
 	accountToFetch := make([]string, 0)
 	txsBeCross := make([]*core.Transaction, 0) // the transactions which will be cross-shard tx because of re-partition
 	lastMapid := len(cphm.cdm.ModifiedMap) - 1
-	for key, val := range cphm.cdm.ModifiedMap[lastMapid] {
+	for key, val := range cphm.cdm.ModifiedMap[lastMapid] { //key is the address, val is the shardID
 		if val != cphm.pbftNode.ShardID && cphm.pbftNode.CurChain.Get_PartitionMap(key) == cphm.pbftNode.ShardID {
-			accountToFetch = append(accountToFetch, key)
+			accountToFetch = append(accountToFetch, key) //移動するアカウントだけを抽出
 		}
 	}
 	asFetched := cphm.pbftNode.CurChain.FetchAccounts(accountToFetch)
@@ -77,6 +77,7 @@ func (cphm *CLPAPbftInsideExtraHandleMod_forBroker) sendAccounts_and_Txs() {
 		addrSet := make(map[string]bool)
 		asSend := make([]*core.AccountState, 0)
 		for idx, addr := range accountToFetch {
+			// if the account is in the shard i, then send it
 			if cphm.cdm.ModifiedMap[lastMapid][addr] == i {
 				addrSend = append(addrSend, addr)
 				addrSet[addr] = true
@@ -107,7 +108,7 @@ func (cphm *CLPAPbftInsideExtraHandleMod_forBroker) sendAccounts_and_Txs() {
 					beRemoved = true
 				}
 				// all inner-shard tx should not be added into the account transfer message
-			} else if ptx.FinalRecipient == ptx.Recipient {
+			} else if ptx.FinalRecipient == ptx.Recipient { //A→BのCTXを考えるとき。A→Broker, Broker→B
 				beSend = ok2
 				beRemoved = ok2
 			} else if ptx.OriginalSender == ptx.Sender {

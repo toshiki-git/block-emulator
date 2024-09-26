@@ -63,6 +63,7 @@ func NewCLPACommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *signa
 
 func (ccm *CLPACommitteeModule) HandleOtherMessage([]byte) {}
 
+// get shard id by address
 func (ccm *CLPACommitteeModule) fetchModifiedMap(key string) uint64 {
 	if val, ok := ccm.modifiedMap[key]; !ok {
 		return uint64(utils.Addr2Shard(key))
@@ -211,6 +212,7 @@ func (ccm *CLPACommitteeModule) clpaReset() {
 	}
 }
 
+// handle block information when received CBlockInfo message(pbft node commited)pbftノードがコミットしたとき
 func (ccm *CLPACommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	ccm.sl.Slog.Printf("Supervisor: received from shard %d in epoch %d.\n", b.SenderShardID, b.Epoch)
 	if atomic.CompareAndSwapInt32(&ccm.curEpoch, int32(b.Epoch-1), int32(b.Epoch)) {

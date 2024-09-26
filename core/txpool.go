@@ -10,7 +10,7 @@ import (
 
 type TxPool struct {
 	TxQueue   []*Transaction            // transaction Queue
-	RelayPool map[uint64][]*Transaction //designed for sharded blockchain, from Monoxide
+	RelayPool map[uint64][]*Transaction //designed for sharded blockchain, from Monoxide map[shardID] -> txs
 	lock      sync.Mutex
 	// The pending list is ignored
 }
@@ -51,7 +51,8 @@ func (txpool *TxPool) AddTxs2Pool_Head(tx []*Transaction) {
 	txpool.TxQueue = append(tx, txpool.TxQueue...)
 }
 
-// Pack transactions for a proposal
+// Pack transactions for a proposal.
+// Delete the packed transactions from the pool
 func (txpool *TxPool) PackTxs(max_txs uint64) []*Transaction {
 	txpool.lock.Lock()
 	defer txpool.lock.Unlock()

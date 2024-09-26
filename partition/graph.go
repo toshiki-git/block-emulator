@@ -1,25 +1,24 @@
-// 图的相关操作
 package partition
 
-// 图中的结点，即区块链网络中参与交易的账户
+// Node in the graph, representing an account participating in transactions in the blockchain network
 type Vertex struct {
-	Addr string // 账户地址
-	// 其他属性待补充
+	Addr string // Account address
+	// Additional attributes to be added
 }
 
-// 描述当前区块链交易集合的图
+// Graph representing the current set of blockchain transactions
 type Graph struct {
-	VertexSet map[Vertex]bool     // 节点集合，其实是 set
-	EdgeSet   map[Vertex][]Vertex // 记录节点与节点间是否存在交易，邻接表
-	// lock      sync.RWMutex       //锁，但是每个储存节点各自存储一份图，不需要此
+	VertexSet map[Vertex]bool     // Set of nodes, essentially a set
+	EdgeSet   map[Vertex][]Vertex // Records transactions between nodes, adjacency list
+	// lock      sync.RWMutex       // Lock, but each storage node stores a separate copy of the graph, so not needed
 }
 
-// 创建节点
+// Create a node
 func (v *Vertex) ConstructVertex(s string) {
 	v.Addr = s
 }
 
-// 增加图中的点
+// Add a node to the graph
 func (g *Graph) AddVertex(v Vertex) {
 	if g.VertexSet == nil {
 		g.VertexSet = make(map[Vertex]bool)
@@ -27,9 +26,9 @@ func (g *Graph) AddVertex(v Vertex) {
 	g.VertexSet[v] = true
 }
 
-// 增加图中的边
+// Add an edge to the graph
 func (g *Graph) AddEdge(u, v Vertex) {
-	// 如果没有点，则增加边，权恒定为 1
+	// If the node doesn't exist, add it. The weight is always 1.
 	if _, ok := g.VertexSet[u]; !ok {
 		g.AddVertex(u)
 	}
@@ -39,12 +38,12 @@ func (g *Graph) AddEdge(u, v Vertex) {
 	if g.EdgeSet == nil {
 		g.EdgeSet = make(map[Vertex][]Vertex)
 	}
-	// 无向图，使用双向边
+	// Undirected graph, using bidirectional edges
 	g.EdgeSet[u] = append(g.EdgeSet[u], v)
 	g.EdgeSet[v] = append(g.EdgeSet[v], u)
 }
 
-// 复制图
+// Copy a graph
 func (dst *Graph) CopyGraph(src Graph) {
 	dst.VertexSet = make(map[Vertex]bool)
 	for v := range src.VertexSet {
@@ -59,7 +58,7 @@ func (dst *Graph) CopyGraph(src Graph) {
 	}
 }
 
-// 输出图
+// Print the graph
 func (g Graph) PrintGraph() {
 	for v := range g.VertexSet {
 		print(v.Addr, " ")

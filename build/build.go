@@ -80,6 +80,6 @@ func BuildSupervisor(nnm, snm uint64) {
 func BuildNewPbftNode(nid, nnm, sid, snm uint64) {
 	methodID := params.ConsensusMethod
 	worker := pbft_all.NewPbftNode(sid, nid, initConfig(nid, nnm, sid, snm), params.CommitteeMethod[methodID])
-	go worker.TcpListen()
-	worker.Propose()
+	go worker.TcpListen() // Leader and Follower Nodes
+	worker.Propose()      // only Leader Node
 }

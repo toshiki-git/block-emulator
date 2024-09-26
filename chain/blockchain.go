@@ -93,6 +93,7 @@ func (bc *BlockChain) GetUpdateStatusTrie(txs []*core.Transaction) common.Hash {
 	for i, tx := range txs {
 		// fmt.Printf("tx %d: %s, %s\n", i, tx.Sender, tx.Recipient)
 		// senderIn := false
+		// リレーTXの場合は、
 		if !tx.Relayed && (bc.Get_PartitionMap(tx.Sender) == bc.ChainConfig.ShardID || tx.HasBroker) {
 			// senderIn = true
 			// fmt.Printf("the sender %s is in this shard %d, \n", tx.Sender, bc.ChainConfig.ShardID)

@@ -59,9 +59,9 @@ func (cphm *CLPAPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 	// generate accout transfer and txs message
 	accountToFetch := make([]string, 0)
 	lastMapid := len(cphm.cdm.ModifiedMap) - 1
-	for key, val := range cphm.cdm.ModifiedMap[lastMapid] {
+	for key, val := range cphm.cdm.ModifiedMap[lastMapid] { //key is the address, val is the shardID
 		if val != cphm.pbftNode.ShardID && cphm.pbftNode.CurChain.Get_PartitionMap(key) == cphm.pbftNode.ShardID {
-			accountToFetch = append(accountToFetch, key)
+			accountToFetch = append(accountToFetch, key) //移動するアカウントだけを抽出
 		}
 	}
 	asFetched := cphm.pbftNode.CurChain.FetchAccounts(accountToFetch)
@@ -76,6 +76,7 @@ func (cphm *CLPAPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 		addrSet := make(map[string]bool)
 		asSend := make([]*core.AccountState, 0)
 		for idx, addr := range accountToFetch {
+			// if the account is in the shard i, then send it
 			if cphm.cdm.ModifiedMap[lastMapid][addr] == i {
 				addrSend = append(addrSend, addr)
 				addrSet[addr] = true

@@ -37,7 +37,7 @@ var (
 	SupervisorAddr = "127.0.0.1:18800"        // Supervisor ip address
 	DatasetFile    = `./selectedTxs_300K.csv` // The raw BlockTransaction data path
 
-	ReconfigTimeGap = 50 // The time gap between epochs. This variable is only used in CLPA / CLPA_Broker now.
+	ReconfigTimeGap = 50 // The time gap between epochs. This variable is only used in CLPA / CLPA_Broker now. (unit: second)
 )
 
 // network layer
