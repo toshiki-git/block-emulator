@@ -31,6 +31,10 @@ type Transaction struct {
 	OriginalSender utils.Address
 	FinalRecipient utils.Address
 	RawTxHash      []byte
+
+	// Fields for smart contract transactions
+	RecipientIsContract bool
+	InternalTxs         []*InternalTransaction
 }
 
 func (tx *Transaction) PrintTx() string {

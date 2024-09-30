@@ -9,9 +9,10 @@ import (
 )
 
 type TxPool struct {
-	TxQueue   []*Transaction            // transaction Queue
-	RelayPool map[uint64][]*Transaction //designed for sharded blockchain, from Monoxide map[shardID] -> txs
-	lock      sync.Mutex
+	TxQueue        []*Transaction                    // transaction Queue
+	RelayPool      map[uint64][]*Transaction         // designed for sharded blockchain, from Monoxide map[shardID] -> txs
+	InternalTxPool map[uint64][]*InternalTransaction // designed for sharded blockchain, from Monoxide. map[shardID] -> itxs
+	lock           sync.Mutex
 	// The pending list is ignored
 }
 
@@ -148,4 +149,21 @@ func (txpool *TxPool) TransferTxs(addr utils.Address) []*Transaction {
 	txpool.TxQueue = newTxQueue
 	txpool.RelayPool = newRelayPool
 	return txTransfered
+}
+
+// MyProposal Implementation
+func (txpool *TxPool) AddInternalTx(tx *Transaction, shardID uint64) {
+	txpool.lock.Lock()
+	defer txpool.lock.Unlock()
+	_, ok := txpool.InternalTxPool[shardID]
+	if !ok {
+		txpool.InternalTxPool[shardID] = make([]*InternalTransaction, 0)
+	}
+	txpool.InternalTxPool[shardID] = append(txpool.InternalTxPool[shardID], tx.InternalTxs...)
+}
+
+func (txpool *TxPool) ClearInternalPool() {
+	txpool.lock.Lock()
+	defer txpool.lock.Unlock()
+	txpool.InternalTxPool = nil
 }
