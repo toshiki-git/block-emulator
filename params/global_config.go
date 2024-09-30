@@ -16,7 +16,7 @@ var (
 
 // consensus layer & output file path
 var (
-	ConsensusMethod = 0 // ConsensusMethod an Integer, which indicates the choice ID of methods / consensuses. Value range: [0, 4), representing [CLPA_Broker, CLPA, Broker, Relay]"
+	ConsensusMethod = 0 // ConsensusMethod an Integer, which indicates the choice ID of methods / consensuses. Value range: [0, 5), representing [CLPA_Broker, CLPA, Broker, Relay, Proposal]"
 
 	PbftViewChangeTimeOut = 10000 // The view change threshold of pbft. If the process of PBFT is too slow, the view change mechanism will be triggered.
 
@@ -38,6 +38,9 @@ var (
 	DatasetFile    = `./selectedTxs_300K.csv` // The raw BlockTransaction data path
 
 	ReconfigTimeGap = 50 // The time gap between epochs. This variable is only used in CLPA / CLPA_Broker now. (unit: second)
+
+	// Proposal
+	InternalTxFile = `./internalTxs.csv` // The internal transaction data path
 )
 
 // network layer
@@ -69,6 +72,9 @@ type globalConfig struct {
 	Delay       int `json:"Delay"`
 	JitterRange int `json:"JitterRange"`
 	Bandwidth   int `json:"Bandwidth"`
+
+	//Proposal
+	InternalTxFile string `json:"InternalTxFile"` // The internal transaction data path
 }
 
 func ReadConfigFile() {
@@ -115,4 +121,7 @@ func ReadConfigFile() {
 	Delay = config.Delay
 	JitterRange = config.JitterRange
 	Bandwidth = config.Bandwidth
+
+	// Proposal
+	InternalTxFile = config.InternalTxFile
 }
