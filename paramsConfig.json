@@ -18,7 +18,7 @@
   "InternalTxFile": "./internalTxs_1000K.csv",
   "ReconfigTimeGap": 120,
 
-  "Delay": 2000,
-  "JitterRange": 1000,
+  "Delay": -1,
+  "JitterRange": -1,
   "Bandwidth": 1000000
 }
