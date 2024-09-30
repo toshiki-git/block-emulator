@@ -1,23 +1,24 @@
 {
-  "ConsensusMethod": 0,
-  
-  "PbftViewChangeTimeOut":20000,
+  "ConsensusMethod": 1,
+
+  "PbftViewChangeTimeOut": 20000,
 
   "ExpDataRootDir": "expTest",
 
   "Block_Interval": 5000,
   "BlockSize": 2000,
   "InjectSpeed": 2000,
-  "TotalDataSize": 160000,
+  "TotalDataSize": 10000,
   "TxBatchSize": 16000,
 
   "BrokerNum": 10,
   "RelayWithMerkleProof": 0,
-  
-  "DatasetFile": "./selectedTxs_300K.csv",
-  "ReconfigTimeGap": 50,
 
-  "Delay": -1,
-  "JitterRange": -1,
-  "Bandwidth":1000000
+  "DatasetFile": "./selectedTxs_1000K.csv",
+  "InternalTxFile": "./internalTxs_1000K.csv",
+  "ReconfigTimeGap": 120,
+
+  "Delay": 2000,
+  "JitterRange": 1000,
+  "Bandwidth": 1000000
 }
