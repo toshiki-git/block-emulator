@@ -40,7 +40,7 @@ var (
 	ReconfigTimeGap = 50 // The time gap between epochs. This variable is only used in CLPA / CLPA_Broker now. (unit: second)
 
 	// Proposal
-	InternalTxFile = `./internalTxs.csv` // The internal transaction data path
+	InternalTxFile = `./selectedTxs_1000K.csv` // The internal transaction data path
 )
 
 // network layer
