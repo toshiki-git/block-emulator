@@ -158,6 +158,16 @@ func NewPbftNode(shardID, nodeID uint64, pcc *params.ChainConfig, messageHandleT
 		p.ohm = &RawBrokerOutsideModule{
 			pbftNode: p,
 		}
+	case "Proposal":
+		ncdm := dataSupport.NewCLPADataSupport()
+		p.ihm = &ProposalPbftInsideExtraHandleMod{
+			pbftNode: p,
+			cdm:      ncdm,
+		}
+		p.ohm = &ProposalRelayOutsideModule{
+			pbftNode: p,
+			cdm:      ncdm,
+		}
 	default:
 		p.ihm = &RawRelayPbftExtraHandleMod{
 			pbftNode: p,
