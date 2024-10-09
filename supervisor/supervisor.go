@@ -11,6 +11,7 @@ import (
 	"blockEmulator/supervisor/measure"
 	"blockEmulator/supervisor/signal"
 	"blockEmulator/supervisor/supervisor_log"
+	"blockEmulator/utils"
 	"bufio"
 	"encoding/json"
 	"io"
@@ -238,6 +239,8 @@ func (d *Supervisor) CloseSupervisor() {
 		d.sl.Slog.Println(d.comMod.(*committee.ProposalCommitteeModule).ClpaTest.OutputMetricName())
 		d.sl.Slog.Println(d.comMod.(*committee.ProposalCommitteeModule).ClpaTest.OutputRecord())
 	}
+
+	utils.CopyFile("paramsConfig.json", params.ExpDataRootDir+"/paramsConfig.json")
 
 	networks.CloseAllConnInPool()
 	d.tcpLn.Close()
