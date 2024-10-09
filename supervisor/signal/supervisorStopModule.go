@@ -41,6 +41,12 @@ func (ss *StopSignal) GapEnough() bool {
 	return ss.stopGap >= ss.stopThreshold
 }
 
+func (ss *StopSignal) CheckInfiniteLoop() bool {
+	ss.stoplock.Lock()
+	defer ss.stoplock.Unlock()
+	return ss.stopGap >= ss.stopThreshold*3
+}
+
 // My code
 func (ss *StopSignal) GetStopGap() int {
 	ss.stoplock.Lock()

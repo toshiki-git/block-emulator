@@ -121,6 +121,30 @@ func (d *Supervisor) handleBlockInfos(content []byte) {
 // read transactions from dataFile. When the number of data is enough,
 // the Supervisor will do re-partition and send partitionMSG and txs to leaders.
 func (d *Supervisor) SupervisorTxHandling() {
+	go func() {
+		for !d.Ss.CheckInfiniteLoop() { // wait all txs to be handled
+			d.sl.Slog.Println("CheckInfiniteLoop")
+			d.sl.Slog.Println(d.Ss.GetStopGap())
+			time.Sleep(10 * time.Second)
+		}
+
+		// send stop message
+		d.sl.Slog.Println("プログラムが無限ループに陥っています。")
+		stopmsg := message.MergeMessage(message.CStop, []byte("this is a stop message~"))
+		d.sl.Slog.Println("Supervisor: now sending cstop message to all nodes")
+		for sid := uint64(0); sid < d.ChainConfig.ShardNums; sid++ {
+			for nid := uint64(0); nid < d.ChainConfig.Nodes_perShard; nid++ {
+				networks.TcpDial(stopmsg, d.Ip_nodeTable[sid][nid])
+			}
+		}
+		// make sure all stop messages are sent.
+		time.Sleep(time.Duration(params.Delay+params.JitterRange+3) * time.Millisecond)
+
+		d.sl.Slog.Println("Supervisor: now Closing")
+		d.listenStop = true
+		d.CloseSupervisor()
+	}()
+
 	d.comMod.MsgSendingControl()
 	d.sl.Slog.Printf("End MsgSendingControl()\n")
 	// TxHandling is end
@@ -142,6 +166,28 @@ func (d *Supervisor) SupervisorTxHandling() {
 	d.sl.Slog.Println("Supervisor: now Closing")
 	d.listenStop = true
 	d.CloseSupervisor()
+
+	go func() {
+		for !d.Ss.CheckInfiniteLoop() { // wait all txs to be handled
+			d.sl.Slog.Printf("Supervisor: waiting for all txs to be handled\n")
+			time.Sleep(time.Second)
+		}
+
+		// send stop message
+		stopmsg := message.MergeMessage(message.CStop, []byte("this is a stop message~"))
+		d.sl.Slog.Println("Supervisor: now sending cstop message to all nodes")
+		for sid := uint64(0); sid < d.ChainConfig.ShardNums; sid++ {
+			for nid := uint64(0); nid < d.ChainConfig.Nodes_perShard; nid++ {
+				networks.TcpDial(stopmsg, d.Ip_nodeTable[sid][nid])
+			}
+		}
+		// make sure all stop messages are sent.
+		time.Sleep(time.Duration(params.Delay+params.JitterRange+3) * time.Millisecond)
+
+		d.sl.Slog.Println("Supervisor: now Closing")
+		d.listenStop = true
+		d.CloseSupervisor()
+	}()
 }
 
 // handle message. only one message to be handled now
