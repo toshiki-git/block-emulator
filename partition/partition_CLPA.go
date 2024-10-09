@@ -4,11 +4,13 @@ import (
 	"blockEmulator/utils"
 	"bytes"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/gob"
 	"errors"
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"strconv"
 )
 
@@ -239,10 +241,26 @@ func (cs *CLPAState) getShard_score(v Vertex, uShard int) float64 {
 
 // CLPA partitioning algorithm returns the partition map and the number of cross-shard edges
 func (cs *CLPAState) CLPA_Partition() (map[string]uint64, int) {
+	// ログファイルを追記モードで開く
+	csvFile, err := os.OpenFile("./expTest/graph.csv", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println("Error opening log file:", err)
+		return nil, 0
+	}
+	defer csvFile.Close()
+
+	writer := csv.NewWriter(csvFile)
+	defer writer.Flush()
+
+	// CLPA実行前の状態を収集
 	cs.ComputeEdges2Shard()
-	fmt.Println("Before running CLPA, cross-shard edge number:", cs.CrossShardEdgeNum)
+	beforeCrossShardEdgeNum := cs.CrossShardEdgeNum
+	beforeVertexsNumInShard := fmt.Sprintf("%v", cs.VertexsNumInShard)
+	beforeEdges2Shard := fmt.Sprintf("%v", cs.Edges2Shard)
+
 	res := make(map[string]uint64)
 	updateTreshold := make(map[string]int)
+
 	for iter := 0; iter < cs.MaxIterations; iter += 1 { // The outer loop controls the number of iterations, constraint
 		for v := range cs.NetGraph.VertexSet {
 			if updateTreshold[v.Addr] >= 50 {
@@ -275,13 +293,69 @@ func (cs *CLPAState) CLPA_Partition() (map[string]uint64, int) {
 			}
 		}
 	}
-	for sid, n := range cs.VertexsNumInShard {
+
+	/* 	for sid, n := range cs.VertexsNumInShard {
 		fmt.Printf("%d has vertexs: %d\n", sid, n)
-	}
+	} */
 
 	cs.ComputeEdges2Shard()
-	fmt.Println("After running CLPA, cross-shard edge number:", cs.CrossShardEdgeNum)
+	afterCrossShardEdgeNum := cs.CrossShardEdgeNum
+	afterVertexsNumInShard := fmt.Sprintf("%v", cs.VertexsNumInShard)
+	afterEdges2Shard := fmt.Sprintf("%v", cs.Edges2Shard)
+
+	// 統計情報の収集
+	totalVertex := CountTrueVertices(cs.NetGraph.VertexSet)
+	totalEdge := CountTrueEdges(cs.NetGraph.EdgeSet)
+	sumVertex := SumVertex(cs.VertexsNumInShard)
+
+	// CSV行のデータを作成
+	row := []string{
+		strconv.Itoa(666),
+		beforeVertexsNumInShard,
+		beforeEdges2Shard,
+		strconv.Itoa(beforeCrossShardEdgeNum),
+		afterVertexsNumInShard,
+		afterEdges2Shard,
+		strconv.Itoa(afterCrossShardEdgeNum),
+		strconv.Itoa(totalVertex),
+		strconv.Itoa(totalEdge),
+		strconv.Itoa(sumVertex),
+	}
+
+	// データをCSVに書き込み
+	if err := writer.Write(row); err != nil {
+		fmt.Println("Error writing to CSV file:", err)
+	}
+
 	return res, cs.CrossShardEdgeNum
+}
+
+// CLPAの頂点数を数える関数
+// map[Vertex]bool 型に対応
+// My code
+func CountTrueVertices(vertexSet map[Vertex]bool) int {
+	return len(vertexSet)
+}
+
+// CLPAのエッジ数を数える関数
+// My code
+func CountTrueEdges(edgeSet map[Vertex][]Vertex) int {
+	totalEdges := 0
+	for _, edges := range edgeSet {
+		totalEdges += len(edges)
+	}
+	return totalEdges
+}
+
+// シャード内の頂点数の合計を計算する関数
+// []int 型に対応
+// My code
+func SumVertex(vertexsNumInShard []int) int {
+	sum := 0
+	for _, num := range vertexsNumInShard {
+		sum += num
+	}
+	return sum
 }
 
 func (cs *CLPAState) EraseEdges() {

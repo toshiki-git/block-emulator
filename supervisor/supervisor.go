@@ -62,7 +62,7 @@ func (d *Supervisor) NewSupervisor(ip string, pcc *params.ChainConfig, committee
 	case "Broker":
 		d.comMod = committee.NewBrokerCommitteeMod(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.TotalDataSize, params.TxBatchSize)
 	case "Proposal":
-		d.comMod = committee.NewProposalCommitteeModule(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.InternalTxFile, params.TotalDataSize, params.TxBatchSize, params.ReconfigTimeGap)
+		d.comMod = committee.NewProposalCommitteeModule(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.InternalTxFile, params.TotalDataSize, params.TxBatchSize, params.ReconfigTimeGap, measure.NewTestModule_CLPA())
 	default:
 		d.comMod = committee.NewRelayCommitteeModule(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.TotalDataSize, params.TxBatchSize)
 	}
@@ -104,6 +104,7 @@ func (d *Supervisor) handleBlockInfos(content []byte) {
 	// StopSignal check
 	if bim.BlockBodyLength == 0 {
 		d.Ss.StopGap_Inc()
+		d.sl.Slog.Printf("Supervisor: StopGap_Inc stopGap is %d from %d\n", d.Ss.GetStopGap(), bim.SenderShardID)
 	} else {
 		d.Ss.StopGap_Reset()
 	}
@@ -114,15 +115,16 @@ func (d *Supervisor) handleBlockInfos(content []byte) {
 	for _, measureMod := range d.testMeasureMods {
 		measureMod.UpdateMeasureRecord(bim)
 	}
-	// add codes here ...
 }
 
 // read transactions from dataFile. When the number of data is enough,
 // the Supervisor will do re-partition and send partitionMSG and txs to leaders.
 func (d *Supervisor) SupervisorTxHandling() {
 	d.comMod.MsgSendingControl()
+	d.sl.Slog.Printf("End MsgSendingControl()\n")
 	// TxHandling is end
 	for !d.Ss.GapEnough() { // wait all txs to be handled
+		d.sl.Slog.Printf("Supervisor: waiting for all txs to be handled\n")
 		time.Sleep(time.Second)
 	}
 	// send stop message
@@ -230,6 +232,13 @@ func (d *Supervisor) CloseSupervisor() {
 		d.sl.Slog.Println(measureMod.OutputRecord())
 		println()
 	}
+	// CLPAの結果を出力
+	switch d.comMod.(type) {
+	case *committee.ProposalCommitteeModule:
+		d.sl.Slog.Println(d.comMod.(*committee.ProposalCommitteeModule).ClpaTest.OutputMetricName())
+		d.sl.Slog.Println(d.comMod.(*committee.ProposalCommitteeModule).ClpaTest.OutputRecord())
+	}
+
 	networks.CloseAllConnInPool()
 	d.tcpLn.Close()
 }

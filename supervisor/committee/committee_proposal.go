@@ -6,6 +6,7 @@ import (
 	"blockEmulator/networks"
 	"blockEmulator/params"
 	"blockEmulator/partition"
+	"blockEmulator/supervisor/measure"
 	"blockEmulator/supervisor/signal"
 	"blockEmulator/supervisor/supervisor_log"
 	"blockEmulator/utils"
@@ -31,8 +32,9 @@ type ProposalCommitteeModule struct {
 	// additional variants
 	curEpoch            int32
 	clpaLock            sync.Mutex
-	clpaGraph           *partition.CLPAState
-	modifiedMap         map[string]uint64
+	ClpaGraph           *partition.CLPAState
+	ClpaTest            *measure.TestModule_CLPA
+	modifiedMap         map[string]uint64 // key: address, value: shardID
 	clpaLastRunningTime time.Time
 	clpaFreq            int
 
@@ -47,7 +49,7 @@ type ProposalCommitteeModule struct {
 	internalTxMap map[string][]*core.InternalTransaction
 }
 
-func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *signal.StopSignal, sl *supervisor_log.SupervisorLog, csvFilePath, internalTxCsvPath string, dataNum, batchNum, clpaFrequency int) *ProposalCommitteeModule {
+func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *signal.StopSignal, sl *supervisor_log.SupervisorLog, csvFilePath, internalTxCsvPath string, dataNum, batchNum, clpaFrequency int, clpaTest *measure.TestModule_CLPA) *ProposalCommitteeModule {
 	cg := new(partition.CLPAState)
 	// argument (WeightPenalty, MaxIterations, ShardNum)
 	cg.Init_CLPAState(0.5, 100, params.ShardNum)
@@ -58,7 +60,8 @@ func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *s
 		dataTotalNum:        dataNum,
 		batchDataNum:        batchNum,
 		nowDataNum:          0,
-		clpaGraph:           cg,
+		ClpaGraph:           cg,
+		ClpaTest:            clpaTest,
 		modifiedMap:         make(map[string]uint64),
 		clpaFreq:            clpaFrequency,
 		clpaLastRunningTime: time.Time{},
@@ -66,6 +69,7 @@ func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *s
 		Ss:                  Ss,
 		sl:                  sl,
 		curEpoch:            0,
+		internalTxMap:       make(map[string][]*core.InternalTransaction),
 	}
 	pcm.internalTxMap = pcm.LoadInternalTxsFromCSV()
 
@@ -190,17 +194,20 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 			if pcm.clpaLastRunningTime.IsZero() {
 				pcm.clpaLastRunningTime = time.Now()
 			}
-			pcm.txSending(txlist)
 
+			pcm.txSending(txlist)
+			pcm.sl.Slog.Println(len(txlist), "txs have been sent. ")
 			// reset the variants about tx sending
 			txlist = make([]*core.Transaction, 0)
 			pcm.Ss.StopGap_Reset()
+
 		}
 
 		if !pcm.clpaLastRunningTime.IsZero() && time.Since(pcm.clpaLastRunningTime) >= time.Duration(pcm.clpaFreq)*time.Second {
 			pcm.clpaLock.Lock()
 			clpaCnt++
-			mmap, _ := pcm.clpaGraph.CLPA_Partition()
+			mmap, _ := pcm.ClpaGraph.CLPA_Partition()
+			pcm.ClpaTest.UpdateMeasureRecord(pcm.ClpaGraph)
 
 			pcm.clpaMapSend(mmap)
 			for key, val := range mmap {
@@ -209,6 +216,7 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 			pcm.clpaReset()
 			pcm.clpaLock.Unlock()
 
+			//　多分partitionのブロックがコミットされて、次のepochになるまで待つ
 			for atomic.LoadInt32(&pcm.curEpoch) != int32(clpaCnt) {
 				time.Sleep(time.Second)
 			}
@@ -217,6 +225,7 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 		}
 
 		if pcm.nowDataNum == pcm.dataTotalNum {
+			pcm.sl.Slog.Println("All txs have been sent!!!!!")
 			break
 		}
 	}
@@ -227,7 +236,9 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 		if time.Since(pcm.clpaLastRunningTime) >= time.Duration(pcm.clpaFreq)*time.Second {
 			pcm.clpaLock.Lock()
 			clpaCnt++
-			mmap, _ := pcm.clpaGraph.CLPA_Partition()
+			mmap, _ := pcm.ClpaGraph.CLPA_Partition()
+			pcm.ClpaTest.UpdateMeasureRecord(pcm.ClpaGraph)
+
 			pcm.clpaMapSend(mmap)
 			for key, val := range mmap {
 				pcm.modifiedMap[key] = val
@@ -235,6 +246,7 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 			pcm.clpaReset()
 			pcm.clpaLock.Unlock()
 
+			//　多分partitionのブロックがコミットされて、次のepochになるまで待つ
 			for atomic.LoadInt32(&pcm.curEpoch) != int32(clpaCnt) {
 				time.Sleep(time.Second)
 			}
@@ -262,10 +274,10 @@ func (pcm *ProposalCommitteeModule) clpaMapSend(m map[string]uint64) {
 }
 
 func (pcm *ProposalCommitteeModule) clpaReset() {
-	pcm.clpaGraph = new(partition.CLPAState)
-	pcm.clpaGraph.Init_CLPAState(0.5, 100, params.ShardNum)
+	pcm.ClpaGraph = new(partition.CLPAState)
+	pcm.ClpaGraph.Init_CLPAState(0.5, 100, params.ShardNum)
 	for key, val := range pcm.modifiedMap {
-		pcm.clpaGraph.PartitionMap[partition.Vertex{Addr: key}] = int(val)
+		pcm.ClpaGraph.PartitionMap[partition.Vertex{Addr: key}] = int(val)
 	}
 }
 
@@ -279,12 +291,24 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	}
 	pcm.clpaLock.Lock()
 	for _, tx := range b.InnerShardTxs {
-		pcm.clpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, partition.Vertex{Addr: tx.Recipient})
+		// FOCUS:
+		pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, partition.Vertex{Addr: tx.Recipient})
+		if tx.RecipientIsContract {
+			for _, itx := range tx.InternalTxs {
+				pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
+			}
+		}
 	}
 	for _, r2tx := range b.Relay2Txs {
-		pcm.clpaGraph.AddEdge(partition.Vertex{Addr: r2tx.Sender}, partition.Vertex{Addr: r2tx.Recipient})
+		pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: r2tx.Sender}, partition.Vertex{Addr: r2tx.Recipient})
+		if r2tx.RecipientIsContract {
+			for _, itx := range r2tx.InternalTxs {
+				pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
+			}
+		}
 	}
 	pcm.clpaLock.Unlock()
+
 }
 
 func (pcm *ProposalCommitteeModule) LoadInternalTxsFromCSV() map[string][]*core.InternalTransaction {
@@ -295,7 +319,7 @@ func (pcm *ProposalCommitteeModule) LoadInternalTxsFromCSV() map[string][]*core.
 	defer file.Close()
 
 	reader := csv.NewReader(file)
-	internalTxMap := make(map[string][]*core.InternalTransaction) //parentTxHash -> []*InternalTransaction
+	internalTxMap := make(map[string][]*core.InternalTransaction) // parentTxHash -> []*InternalTransaction
 
 	for {
 		data, err := reader.Read()
@@ -306,21 +330,58 @@ func (pcm *ProposalCommitteeModule) LoadInternalTxsFromCSV() map[string][]*core.
 			log.Panic(err)
 		}
 
-		// `data` はCSVの各行を表すスライス
-		parentTxHash := data[2] // transactionHash (CSV内のユニーク識別子)
-		typeTraceAddress := getTraceType(data[3])
-		sender := data[4]
-		recipient := data[5]
-		valueStr := data[8]
-		senderIsContract := data[6] == "1"
-		recipientIsContract := data[7] == "1"
-		value, ok := new(big.Int).SetString(valueStr, 10)
-		if !ok {
-			log.Panic("Failed to parse value for internal transaction")
+		// バリデーション：行が9列以上あるか確認
+		if len(data) < 9 {
+			log.Printf("Skipping row due to insufficient columns: %v", data)
+			continue
 		}
 
+		// バリデーション：parentTxHashが空でないか確認
+		parentTxHash := data[2]
+		if parentTxHash == "" {
+			log.Printf("Skipping row due to empty parentTxHash: %v", data)
+			continue
+		}
+
+		// バリデーション：typeTraceAddressが空でないか確認
+		typeTraceAddress := getTraceType(data[3])
+		if typeTraceAddress == "" {
+			log.Printf("Skipping row due to empty typeTraceAddress: %v", data)
+			continue
+		}
+
+		// バリデーション：senderとrecipientが正しい形式であるか確認
+		sender := data[4]
+		recipient := data[5]
+		if len(sender) < 40 || len(recipient) < 40 {
+			log.Printf("Skipping row due to invalid sender or recipient: %v", data)
+			continue
+		}
+
+		// バリデーション：senderIsContract, recipientIsContractが1または0であるか確認
+		senderIsContract := data[6] == "1"
+		recipientIsContract := data[7] == "1"
+		if data[6] != "1" && data[6] != "0" {
+			log.Printf("Skipping row due to invalid senderIsContract: %v", data)
+			continue
+		}
+		if data[7] != "1" && data[7] != "0" {
+			log.Printf("Skipping row due to invalid recipientIsContract: %v", data)
+			continue
+		}
+
+		// バリデーション：valueが正しい整数としてパースできるか確認
+		valueStr := data[8]
+		value, ok := new(big.Int).SetString(valueStr, 10)
+		if !ok {
+			log.Printf("Skipping row due to invalid value: %v", data)
+			continue
+		}
+
+		// nonceを初期化
 		nonce := uint64(0)
 
+		// 内部トランザクションを作成
 		internalTx := core.NewInternalTransaction(sender[2:], recipient[2:], parentTxHash, typeTraceAddress, value, nonce, time.Now(), senderIsContract, recipientIsContract)
 
 		// 内部トランザクションのリストを、元のトランザクションハッシュでマップに関連付ける
