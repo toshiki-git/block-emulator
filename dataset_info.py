@@ -1,5 +1,6 @@
 import csv
 import re
+import pandas as pd
 
 # アドレスの形式が正しいかどうかをチェックする関数
 def is_valid_address(address):
@@ -123,8 +124,33 @@ def print_itx_info(csv_path, max_rows=None):
     # print(f"Normal tx: {correct_data_count - sctx_count}")
     print("=====================================")
 
+def remove_columns_and_keep_comma(input_file, output_file, columns_to_remove):
+    """
+    指定した列を削除し、その位置に空のカンマを保持したままCSVを保存する関数。
+    
+    Parameters:
+    input_file (str): 元のCSVファイルのパス
+    output_file (str): 結果を保存するCSVファイルのパス
+    columns_to_remove (list): 削除したい列番号(0ベースインデックス)のリスト
+    """
+    # 元のCSVファイルを読み込む (header=None でヘッダーなしとして読み込む)
+    df = pd.read_csv(input_file, header=None)
+    
+    # 指定した列を削除し、空の列をその位置に追加
+    for col in columns_to_remove:
+        df[col] = ''  # 指定した列に空の文字列をセット
+    
+    # 結果を新しいCSVファイルとして保存する (カンマ区切りはそのまま保持)
+    df.to_csv(output_file, header=False, index=False)
+
 # 関数を実行する例
-csv_path = 'selectedTxs_1000K.csv'
-csv_path_itx = 'selectedInternalTxs_1000K.csv'
-print_tx_info(csv_path, 50000)
-print_itx_info(csv_path_itx, 280742)
+# csv_path = 'selectedTxs_1000K.csv'
+# csv_path_itx = 'selectedInternalTxs_1000K.csv'
+# print_tx_info(csv_path, 50000)
+# print_itx_info(csv_path_itx, 280742)
+
+
+input_file = 'selectedInternalTxs_1000K.csv'  # 元のCSVファイル
+output_file = 'selectedInternalTxs_1000K_light.csv'  # 変換後のCSVファイル
+columns_to_remove = [0, 1, 9, 10]
+remove_columns_and_keep_comma(input_file, output_file, columns_to_remove)
