@@ -35,7 +35,9 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinPropose() (bool, *message.
 	}
 
 	// ELSE: propose a block
+	pphm.pbftNode.pl.Plog.Println("TxPool Size Before PackTX: ", len(pphm.pbftNode.CurChain.Txpool.TxQueue))
 	block := pphm.pbftNode.CurChain.GenerateBlock(int32(pphm.pbftNode.NodeID))
+	pphm.pbftNode.pl.Plog.Println("TxPool Size After PackTX: ", len(pphm.pbftNode.CurChain.Txpool.TxQueue))
 	r := &message.Request{
 		RequestType: message.BlockRequest,
 		ReqTime:     time.Now(),
