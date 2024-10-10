@@ -1,6 +1,7 @@
 package partition
 
 import (
+	"blockEmulator/params"
 	"blockEmulator/utils"
 	"bytes"
 	"crypto/sha256"
@@ -241,8 +242,15 @@ func (cs *CLPAState) getShard_score(v Vertex, uShard int) float64 {
 
 // CLPA partitioning algorithm returns the partition map and the number of cross-shard edges
 func (cs *CLPAState) CLPA_Partition() (map[string]uint64, int) {
+	// ディレクトリが存在するか確認し、なければ作成する
+	err := os.MkdirAll(params.ExpDataRootDir, os.ModePerm)
+	if err != nil {
+		fmt.Println("Error creating directory:", err)
+		return nil, 0
+	}
+
 	// ログファイルを追記モードで開く
-	csvFile, err := os.OpenFile("./expTest/graph.csv", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	csvFile, err := os.OpenFile(params.ExpDataRootDir+"/graph.csv", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Println("Error opening log file:", err)
 		return nil, 0
