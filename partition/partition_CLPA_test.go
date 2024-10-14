@@ -354,3 +354,156 @@ func TestCLPA_PartitionFromCSV(t *testing.T) {
 		t.Fatalf("Error writing .dot file: %v", err)
 	}
 }
+
+// Test case 1: Neither u nor v is merged, and they are merged into a new vertex
+func TestMergeContracts_NewMerge(t *testing.T) {
+	state := new(CLPAState)
+	state.Init_CLPAState(0.5, 100, 4) // MergedContracts の初期化を確認
+
+	u := Vertex{Addr: "A"}
+	v := Vertex{Addr: "B"}
+	w := Vertex{Addr: "C"}
+	x := Vertex{Addr: "D"}
+
+	state.NetGraph.AddEdge(u, v)
+	state.NetGraph.AddEdge(v, w)
+	state.NetGraph.AddEdge(v, x)
+
+	state.NetGraph.PrintGraph()
+
+	mergedVertex := state.MergeContracts(v, w)
+
+	fmt.Println("mergedVertex: ", mergedVertex)
+	state.NetGraph.PrintGraph()
+}
+
+// Test case 2: u is already merged, and v is merged into u's merged vertex
+func TestMergeContracts_UAlreadyMerged(t *testing.T) {
+	state := new(CLPAState)
+	// shardNumは4以上必要テストの場合、params.ShardNumを参照しているのでそれが4だから
+	state.Init_CLPAState(0.5, 100, 4)
+
+	u := Vertex{Addr: "A"}
+	v := Vertex{Addr: "B"}
+	mergedU := Vertex{Addr: "merged_A"}
+
+	state.AddVertex(u)
+	state.AddVertex(v)
+	state.MergedContracts[u.Addr] = mergedU
+
+	mergedVertex := state.MergeContracts(u, v)
+
+	fmt.Println(mergedVertex)
+
+}
+
+// Test case 3: Both u and v are already merged, and they are merged into a new vertex
+func TestMergeContracts_BothAlreadyMerged(t *testing.T) {
+	state := new(CLPAState)
+	state.Init_CLPAState(0.5, 100, 4)
+
+	u := Vertex{Addr: "A"}
+	v := Vertex{Addr: "B"}
+	mergedU := Vertex{Addr: "merged_A"}
+	mergedV := Vertex{Addr: "merged_B"}
+
+	state.AddVertex(u)
+	state.AddVertex(v)
+	state.MergedContracts[u.Addr] = mergedU
+	state.MergedContracts[v.Addr] = mergedV
+
+	mergedVertex := state.MergeContracts(u, v)
+
+	fmt.Println(mergedVertex)
+}
+
+// Test case 4: Edges are correctly updated after merging
+func TestMergeContracts_UpdateEdges(t *testing.T) {
+	state := new(CLPAState)
+	state.Init_CLPAState(0.5, 100, 4)
+
+	u := Vertex{Addr: "A"}
+	v := Vertex{Addr: "B"}
+	w := Vertex{Addr: "C"} // Neighbor of A and B
+
+	state.AddVertex(u)
+	state.AddVertex(v)
+	state.AddVertex(w)
+
+	// Add edges between u, v, and w
+	state.NetGraph.AddEdge(u, w)
+	state.NetGraph.AddEdge(v, w)
+
+	// Perform merge
+	mergedVertex := state.MergeContracts(u, v)
+
+	// Check if the new merged vertex is connected to w
+	neighbors := state.NetGraph.EdgeSet[mergedVertex]
+	found := false
+	for _, neighbor := range neighbors {
+		if neighbor == w {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("Expected merged vertex to be connected to w, but it was not")
+	}
+
+	// Check that u and v no longer exist in the graph
+	if _, exists := state.NetGraph.EdgeSet[u]; exists {
+		t.Errorf("Expected u to be removed from the graph, but it still exists")
+	}
+
+	if _, exists := state.NetGraph.EdgeSet[v]; exists {
+		t.Errorf("Expected v to be removed from the graph, but it still exists")
+	}
+}
+
+func TestMergeContracts_ComplexMerge(t *testing.T) {
+	// CLPAStateの初期化
+	state := new(CLPAState)
+	state.Init_CLPAState(0.5, 100, 4) // MergedContracts の初期化を確認
+
+	// 複数の頂点を作成
+	a := Vertex{Addr: "A"}
+	b := Vertex{Addr: "B"}
+	c := Vertex{Addr: "C"}
+	d := Vertex{Addr: "D"}
+	e := Vertex{Addr: "E"}
+	f := Vertex{Addr: "F"}
+
+	// 初期グラフにエッジを追加
+	state.NetGraph.AddEdge(a, b)
+	state.NetGraph.AddEdge(a, d)
+	state.NetGraph.AddEdge(b, c)
+	state.NetGraph.AddEdge(b, e)
+	state.NetGraph.AddEdge(c, e)
+	state.NetGraph.AddEdge(d, e)
+	state.NetGraph.AddEdge(e, f)
+
+	// 初期グラフの状態を表示
+	fmt.Println("Before any merges:")
+	state.NetGraph.PrintGraph()
+	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+
+	// 1回目のマージ: A と B のマージ
+	fmt.Println("Merging A and B...")
+	mergedVertex1 := state.MergeContracts(a, b)
+	fmt.Println("mergedVertexA_B: ", mergedVertex1)
+	state.NetGraph.PrintGraph()
+	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+
+	// 2回目のマージ: A と E のマージ
+	fmt.Println("Merging A and E...")
+	mergedVertex2 := state.MergeContracts(a, e)
+	fmt.Println("mergedVertexA_B_E: ", mergedVertex2)
+	state.NetGraph.PrintGraph()
+	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+
+	/* 	// 最終的なグラフの状態を確認
+	   	fmt.Println("Final graph after all merges:")
+	   	state.NetGraph.PrintGraph()
+	   	fmt.Printf("MergedContracts: %v\n", state.MergedContracts) */
+}

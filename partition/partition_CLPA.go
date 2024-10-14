@@ -27,6 +27,7 @@ type CLPAState struct {
 	CrossShardEdgeNum int            // Total number of cross-shard edges
 	ShardNum          int            // Number of shards
 	GraphHash         []byte
+	MergedContracts   map[string]Vertex //key: address, value: mergedVertex
 }
 
 func (graph *CLPAState) Hash() []byte {
@@ -70,6 +71,67 @@ func (cs *CLPAState) AddEdge(u, v Vertex) {
 	cs.NetGraph.AddEdge(u, v)
 	// Parameters like Edges2Shard can be modified after batch processing
 	// Alternatively, it can be left unprocessed since the CLPA algorithm will update the latest parameters before running
+}
+
+// My Code
+// Contract to Contractの時のみ呼び出される
+func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
+	mergedU, isMergedU := cs.MergedContracts[u.Addr]
+	mergedV, isMergedV := cs.MergedContracts[v.Addr]
+
+	var newMergedVertex Vertex
+
+	if !isMergedU && !isMergedV {
+		// Case 1: Neither u nor v is merged
+		fmt.Println("Case 1: Neither u nor v is merged")
+		newMergedAddr := utils.GenerateEthereumAddress(u.Addr + v.Addr)
+		newMergedVertex = Vertex{Addr: newMergedAddr, IsMerged: true}
+		cs.AddVertex(newMergedVertex)
+
+		// Register both u and v to the new merged vertex
+		cs.MergedContracts[u.Addr] = newMergedVertex
+		cs.MergedContracts[v.Addr] = newMergedVertex
+
+		// Update the EdgeSet
+		cs.NetGraph.UpdateEdgesAfterMerge(u, v, newMergedVertex)
+
+	} else if isMergedU && !isMergedV {
+		// Case 2: u is already merged, but v is not
+		fmt.Println("Case 2: u is already merged, but v is not")
+		newMergedVertex = mergedU
+		cs.MergedContracts[v.Addr] = newMergedVertex
+
+		// Update the EdgeSet
+		cs.NetGraph.UpdateEdgesAfterMerge(v, v, newMergedVertex)
+
+	} else if !isMergedU && isMergedV {
+		// Case 2: v is already merged, but u is not
+		fmt.Println("Case 2: v is already merged, but u is not")
+		newMergedVertex = mergedV
+		cs.MergedContracts[u.Addr] = newMergedVertex
+
+		// Update the EdgeSet
+		cs.NetGraph.UpdateEdgesAfterMerge(u, u, newMergedVertex)
+
+	} else {
+		// Case 3: Both u and v are already merged
+		fmt.Println("Case 3: Both u and v are already merged")
+		newMergedAddr := utils.GenerateEthereumAddress(u.Addr + v.Addr)
+		newMergedVertex = Vertex{Addr: newMergedAddr, IsMerged: true}
+		cs.AddVertex(newMergedVertex)
+
+		// Update MergedContracts to point to the new merged vertex
+		for oldAddr, mergedVertex := range cs.MergedContracts {
+			if mergedVertex == mergedU || mergedVertex == mergedV {
+				cs.MergedContracts[oldAddr] = newMergedVertex
+			}
+		}
+
+		// Update the EdgeSet
+		cs.NetGraph.UpdateEdgesAfterMerge(mergedU, mergedV, newMergedVertex)
+	}
+
+	return newMergedVertex
 }
 
 // Copy CLPA state
@@ -177,6 +239,7 @@ func (cs *CLPAState) Init_CLPAState(wp float64, mIter, sn int) {
 	cs.ShardNum = sn
 	cs.VertexsNumInShard = make([]int, cs.ShardNum)
 	cs.PartitionMap = make(map[Vertex]int)
+	cs.MergedContracts = make(map[string]Vertex)
 }
 
 // Initialize partition, using the last digits of the node address, ensuring no empty shards at initialization
