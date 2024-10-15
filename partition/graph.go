@@ -73,102 +73,39 @@ func removeFromSlice(slice []Vertex, vertex Vertex) []Vertex {
 	return slice
 }
 
-func (g *Graph) UpdateEdgesForNewMerge(u, v, newMergedVertex Vertex) {
-	g.RemoveEdge(u, v) // u と v のエッジを削除
-	// u のエッジを新しい頂点に移す
-	if edgesU, exists := g.EdgeSet[u]; exists {
-		var edgesToRemove []Vertex // 削除対象のエッジを保持
-		for _, neighbor := range edgesU {
-			g.AddEdge(newMergedVertex, neighbor)
-			edgesToRemove = append(edgesToRemove, neighbor) // 後で削除するエッジを追加
-		}
-
-		for _, neighbor := range edgesToRemove {
-			g.RemoveEdge(u, neighbor)
-		}
-		delete(g.EdgeSet, u)
-	}
-
-	// v のエッジを新しい頂点に移す
-	if edgesV, exists := g.EdgeSet[v]; exists {
-		var edgesToRemove []Vertex // 削除対象のエッジを保持
-		for _, neighbor := range edgesV {
-			g.AddEdge(newMergedVertex, neighbor)
-			edgesToRemove = append(edgesToRemove, neighbor)
-		}
-		for _, neighbor := range edgesToRemove {
-			g.RemoveEdge(v, neighbor)
-		}
-		delete(g.EdgeSet, v)
-	}
-
-	// u と v を VertexSet から削除
-	delete(g.VertexSet, u)
-	delete(g.VertexSet, v)
-
-	// 新しい頂点を VertexSet に追加
-	g.VertexSet[newMergedVertex] = true
-}
-
-func (g *Graph) UpdateEdgesForPartialMerge(u, merged Vertex) {
-	// Transfer all edges of the unmerged vertex to the merged vertex
-	g.RemoveEdge(u, merged) // Remove the edge between u and merged
-	if edges, exists := g.EdgeSet[u]; exists {
+func (g *Graph) transferEdgesAndRemove(source, mergedVertex Vertex) {
+	if edges, exists := g.EdgeSet[source]; exists {
 		var edgesToRemove []Vertex // Store edges to be removed after the loop
 		for _, neighbor := range edges {
-			g.AddEdge(merged, neighbor)
+			g.AddEdge(mergedVertex, neighbor)               // Add the edge to the target vertex
 			edgesToRemove = append(edgesToRemove, neighbor) // Mark for later removal
 		}
 
-		// Remove edges after the loop
+		// Remove edges from the source vertex
 		for _, neighbor := range edgesToRemove {
-			g.RemoveEdge(u, neighbor)
+			g.RemoveEdge(source, neighbor)
 		}
-		delete(g.EdgeSet, u) // Remove old edges of the unmerged vertex
+
+		// Remove the source vertex's edges
+		delete(g.EdgeSet, source)
 	}
 
-	// Remove the unmerged vertex from the VertexSet
-	delete(g.VertexSet, u)
+	// Remove the source vertex from the VertexSet
+	delete(g.VertexSet, source)
 }
 
-func (g *Graph) UpdateEdgesForDoubleMerge(mergedU, mergedV, newMergedVertex Vertex) {
-	// Transfer all edges of mergedU to the newMergedVertex
-	g.RemoveEdge(mergedU, mergedV) // Remove the edge between mergedU and mergedV
-	if edgesU, exists := g.EdgeSet[mergedU]; exists {
-		var edgesToRemove []Vertex // Store edges to be removed after the loop
-		for _, neighbor := range edgesU {
-			g.AddEdge(newMergedVertex, neighbor)
-			edgesToRemove = append(edgesToRemove, neighbor) // Mark for later removal
-		}
+func (g *Graph) UpdateGraphForMerge(u, v, mergedVertex Vertex) {
+	g.RemoveEdge(u, v)
+	g.transferEdgesAndRemove(u, mergedVertex)
+	g.transferEdgesAndRemove(v, mergedVertex)
 
-		// Remove edges after the loop
-		for _, neighbor := range edgesToRemove {
-			g.RemoveEdge(mergedU, neighbor)
-		}
-		delete(g.EdgeSet, mergedU) // Remove old edges of mergedU
-	}
+	// Add the new merged vertex to the VertexSet
+	g.VertexSet[mergedVertex] = true
+}
 
-	// Transfer all edges of mergedV to the newMergedVertex
-	if edgesV, exists := g.EdgeSet[mergedV]; exists {
-		var edgesToRemove []Vertex // Store edges to be removed after the loop
-		for _, neighbor := range edgesV {
-			g.AddEdge(newMergedVertex, neighbor)
-			edgesToRemove = append(edgesToRemove, neighbor) // Mark for later removal
-		}
-
-		// Remove edges after the loop
-		for _, neighbor := range edgesToRemove {
-			g.RemoveEdge(mergedV, neighbor)
-		}
-		delete(g.EdgeSet, mergedV) // Remove old edges of mergedV
-	}
-
-	// Remove mergedU and mergedV from VertexSet
-	delete(g.VertexSet, mergedU)
-	delete(g.VertexSet, mergedV)
-
-	// Add newMergedVertex to VertexSet
-	g.VertexSet[newMergedVertex] = true
+func (g *Graph) UpdateGraphForPartialMerge(u, mergedVertex Vertex) {
+	g.RemoveEdge(u, mergedVertex)
+	g.transferEdgesAndRemove(u, mergedVertex)
 }
 
 // Copy a graph

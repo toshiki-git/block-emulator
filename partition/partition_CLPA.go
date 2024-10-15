@@ -79,57 +79,62 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 	mergedU, isMergedU := cs.MergedContracts[u.Addr]
 	mergedV, isMergedV := cs.MergedContracts[v.Addr]
 
-	var newMergedVertex Vertex
+	var mergedVertex Vertex
 
-	if !isMergedU && !isMergedV {
+	// Define the merge conditions
+	bothNotMerged := !isMergedU && !isMergedV // Neither u nor v is merged
+	uMergedOnly := isMergedU && !isMergedV    // Only u is merged
+	vMergedOnly := !isMergedU && isMergedV    // Only v is merged
+	bothMerged := isMergedU && isMergedV      // Both u and v are merged
+
+	switch {
+	case bothNotMerged:
 		// Case 1: Neither u nor v is merged
 		fmt.Println("Case 1: Neither u nor v is merged")
 		newMergedAddr := utils.GenerateEthereumAddress(u.Addr + v.Addr)
-		newMergedVertex = Vertex{Addr: newMergedAddr, IsMerged: true}
+		mergedVertex = Vertex{Addr: newMergedAddr, IsMerged: true}
 
 		// Register both u and v to the new merged vertex
-		cs.MergedContracts[u.Addr] = newMergedVertex
-		cs.MergedContracts[v.Addr] = newMergedVertex
+		cs.MergedContracts[u.Addr] = mergedVertex
+		cs.MergedContracts[v.Addr] = mergedVertex
 
 		// Update the EdgeSet
-		cs.NetGraph.UpdateEdgesForNewMerge(u, v, newMergedVertex)
-
-	} else if isMergedU && !isMergedV {
+		cs.NetGraph.UpdateGraphForMerge(u, v, mergedVertex)
+	case uMergedOnly:
 		// Case 2: u is already merged, but v is not
 		fmt.Println("Case 2: u is already merged, but v is not")
-		newMergedVertex = mergedU
-		cs.MergedContracts[v.Addr] = newMergedVertex
+		mergedVertex = mergedU
+		cs.MergedContracts[v.Addr] = mergedVertex
 
 		// Update the EdgeSet
-		cs.NetGraph.UpdateEdgesForPartialMerge(v, newMergedVertex)
-
-	} else if !isMergedU && isMergedV {
+		cs.NetGraph.UpdateGraphForPartialMerge(v, mergedVertex)
+	case vMergedOnly:
 		// Case 2: v is already merged, but u is not
 		fmt.Println("Case 2: v is already merged, but u is not")
-		newMergedVertex = mergedV
-		cs.MergedContracts[u.Addr] = newMergedVertex
+		mergedVertex = mergedV
+		cs.MergedContracts[u.Addr] = mergedVertex
 
 		// Update the EdgeSet
-		cs.NetGraph.UpdateEdgesForPartialMerge(u, newMergedVertex)
-
-	} else {
+		cs.NetGraph.UpdateGraphForPartialMerge(u, mergedVertex)
+	case bothMerged:
 		// Case 3: Both u and v are already merged
 		fmt.Println("Case 3: Both u and v are already merged")
 		newMergedAddr := utils.GenerateEthereumAddress(u.Addr + v.Addr)
-		newMergedVertex = Vertex{Addr: newMergedAddr, IsMerged: true}
+		mergedVertex = Vertex{Addr: newMergedAddr, IsMerged: true}
 
 		// Update the EdgeSet
-		cs.NetGraph.UpdateEdgesForDoubleMerge(mergedU, mergedV, newMergedVertex)
+		cs.NetGraph.UpdateGraphForMerge(mergedU, mergedV, mergedVertex)
 
 		// Update MergedContracts to point to the new merged vertex
 		for oldAddr, mergedVertex := range cs.MergedContracts {
 			if mergedVertex == mergedU || mergedVertex == mergedV {
-				cs.MergedContracts[oldAddr] = newMergedVertex
+				cs.MergedContracts[oldAddr] = mergedVertex
 			}
 		}
+	default:
+		log.Panic("Invalid merge case")
 	}
-
-	return newMergedVertex
+	return mergedVertex
 }
 
 // Copy CLPA state
