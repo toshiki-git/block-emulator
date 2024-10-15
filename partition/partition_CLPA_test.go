@@ -507,3 +507,56 @@ func TestMergeContracts_ComplexMerge(t *testing.T) {
 	   	state.NetGraph.PrintGraph()
 	   	fmt.Printf("MergedContracts: %v\n", state.MergedContracts) */
 }
+
+func TestMergeContracts_ComplexMerge2(t *testing.T) {
+	// CLPAStateの初期化
+	state := new(CLPAState)
+	state.Init_CLPAState(0.5, 100, 4) // MergedContracts の初期化を確認
+
+	// 複数の頂点を作成
+	a := Vertex{Addr: "A"}
+	b := Vertex{Addr: "B"}
+	c := Vertex{Addr: "C"}
+	d := Vertex{Addr: "D"}
+	e := Vertex{Addr: "E"}
+	f := Vertex{Addr: "F"}
+
+	// 初期グラフにエッジを追加
+	state.NetGraph.AddEdge(a, b)
+	state.NetGraph.AddEdge(a, d)
+	state.NetGraph.AddEdge(b, c)
+	state.NetGraph.AddEdge(b, e)
+	state.NetGraph.AddEdge(c, e)
+	state.NetGraph.AddEdge(d, e)
+	state.NetGraph.AddEdge(e, f)
+
+	// 初期グラフの状態を表示
+	fmt.Println("Before any merges:")
+	state.NetGraph.PrintGraph()
+	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+
+	// 1回目のマージ: A と B のマージ
+	fmt.Println("Merging A and B...")
+	mergedVertex1 := state.MergeContracts(a, b)
+	fmt.Println("mergedVertexA_B: ", mergedVertex1)
+	state.NetGraph.PrintGraph()
+	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+
+	// 2回目のマージ: D と E のマージ
+	fmt.Println("Merging D and E...")
+	mergedVertex2 := state.MergeContracts(d, e)
+	fmt.Println("mergedVertexD_E: ", mergedVertex2)
+	state.NetGraph.PrintGraph()
+	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+
+	fmt.Println("Merging A and D...")
+	mergedVertex3 := state.MergeContracts(a, d)
+	fmt.Println("mergedVertexD_E: ", mergedVertex3)
+	state.NetGraph.PrintGraph()
+	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+
+	/* 	// 最終的なグラフの状態を確認
+	   	fmt.Println("Final graph after all merges:")
+	   	state.NetGraph.PrintGraph()
+	   	fmt.Printf("MergedContracts: %v\n", state.MergedContracts) */
+}

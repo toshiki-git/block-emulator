@@ -49,42 +49,123 @@ func (g *Graph) AddEdge(u, v Vertex) {
 	g.EdgeSet[v] = append(g.EdgeSet[v], u)
 }
 
-// Edges of old vertices u and v are transferred to the new merged vertex
-func (g *Graph) UpdateEdgesAfterMerge(u, v, newMergedVertex Vertex) {
-	// Combine all edges of u and v and reassign them to newMergedVertex
+// Remove an edge from the graph
+func (g *Graph) RemoveEdge(u, v Vertex) {
+	// Remove v from u's adjacency list
+	if neighbors, ok := g.EdgeSet[u]; ok {
+		g.EdgeSet[u] = removeFromSlice(neighbors, v)
+	}
+
+	// Remove u from v's adjacency list (since it's an undirected graph)
+	if neighbors, ok := g.EdgeSet[v]; ok {
+		g.EdgeSet[v] = removeFromSlice(neighbors, u)
+	}
+}
+
+// Helper function to remove a vertex from a slice of vertices
+func removeFromSlice(slice []Vertex, vertex Vertex) []Vertex {
+	for i, v := range slice {
+		if v == vertex {
+			// Remove the vertex by creating a new slice without it
+			return append(slice[:i], slice[i+1:]...)
+		}
+	}
+	return slice
+}
+
+func (g *Graph) UpdateEdgesForNewMerge(u, v, newMergedVertex Vertex) {
+	g.RemoveEdge(u, v) // u と v のエッジを削除
+	// u のエッジを新しい頂点に移す
 	if edgesU, exists := g.EdgeSet[u]; exists {
+		var edgesToRemove []Vertex // 削除対象のエッジを保持
 		for _, neighbor := range edgesU {
-			if neighbor == v {
-				continue
-			}
 			g.AddEdge(newMergedVertex, neighbor)
+			edgesToRemove = append(edgesToRemove, neighbor) // 後で削除するエッジを追加
 		}
-		delete(g.EdgeSet, u) // Remove old vertex edges
+
+		for _, neighbor := range edgesToRemove {
+			g.RemoveEdge(u, neighbor)
+		}
+		delete(g.EdgeSet, u)
 	}
 
+	// v のエッジを新しい頂点に移す
 	if edgesV, exists := g.EdgeSet[v]; exists {
+		var edgesToRemove []Vertex // 削除対象のエッジを保持
 		for _, neighbor := range edgesV {
-			if neighbor == u {
-				continue
-			}
 			g.AddEdge(newMergedVertex, neighbor)
+			edgesToRemove = append(edgesToRemove, neighbor)
 		}
-		delete(g.EdgeSet, v) // Remove old vertex edges
+		for _, neighbor := range edgesToRemove {
+			g.RemoveEdge(v, neighbor)
+		}
+		delete(g.EdgeSet, v)
 	}
 
-	// Ensure that any existing edges pointing to u or v are updated to point to newMergedVertex
-	for vertex, edges := range g.EdgeSet {
-		for i, neighbor := range edges {
-			if neighbor == u || neighbor == v {
-				g.EdgeSet[vertex] = append(g.EdgeSet[vertex][:i], g.EdgeSet[vertex][i+1:]...)
-				i-- // Adjust index after deletion to continue correctly
-			}
-		}
-	}
-
-	// Remove u and v from VertexSet
+	// u と v を VertexSet から削除
 	delete(g.VertexSet, u)
 	delete(g.VertexSet, v)
+
+	// 新しい頂点を VertexSet に追加
+	g.VertexSet[newMergedVertex] = true
+}
+
+func (g *Graph) UpdateEdgesForPartialMerge(u, merged Vertex) {
+	// Transfer all edges of the unmerged vertex to the merged vertex
+	g.RemoveEdge(u, merged) // Remove the edge between u and merged
+	if edges, exists := g.EdgeSet[u]; exists {
+		var edgesToRemove []Vertex // Store edges to be removed after the loop
+		for _, neighbor := range edges {
+			g.AddEdge(merged, neighbor)
+			edgesToRemove = append(edgesToRemove, neighbor) // Mark for later removal
+		}
+
+		// Remove edges after the loop
+		for _, neighbor := range edgesToRemove {
+			g.RemoveEdge(u, neighbor)
+		}
+		delete(g.EdgeSet, u) // Remove old edges of the unmerged vertex
+	}
+
+	// Remove the unmerged vertex from the VertexSet
+	delete(g.VertexSet, u)
+}
+
+func (g *Graph) UpdateEdgesForDoubleMerge(mergedU, mergedV, newMergedVertex Vertex) {
+	// Transfer all edges of mergedU to the newMergedVertex
+	g.RemoveEdge(mergedU, mergedV) // Remove the edge between mergedU and mergedV
+	if edgesU, exists := g.EdgeSet[mergedU]; exists {
+		var edgesToRemove []Vertex // Store edges to be removed after the loop
+		for _, neighbor := range edgesU {
+			g.AddEdge(newMergedVertex, neighbor)
+			edgesToRemove = append(edgesToRemove, neighbor) // Mark for later removal
+		}
+
+		// Remove edges after the loop
+		for _, neighbor := range edgesToRemove {
+			g.RemoveEdge(mergedU, neighbor)
+		}
+		delete(g.EdgeSet, mergedU) // Remove old edges of mergedU
+	}
+
+	// Transfer all edges of mergedV to the newMergedVertex
+	if edgesV, exists := g.EdgeSet[mergedV]; exists {
+		var edgesToRemove []Vertex // Store edges to be removed after the loop
+		for _, neighbor := range edgesV {
+			g.AddEdge(newMergedVertex, neighbor)
+			edgesToRemove = append(edgesToRemove, neighbor) // Mark for later removal
+		}
+
+		// Remove edges after the loop
+		for _, neighbor := range edgesToRemove {
+			g.RemoveEdge(mergedV, neighbor)
+		}
+		delete(g.EdgeSet, mergedV) // Remove old edges of mergedV
+	}
+
+	// Remove mergedU and mergedV from VertexSet
+	delete(g.VertexSet, mergedU)
+	delete(g.VertexSet, mergedV)
 
 	// Add newMergedVertex to VertexSet
 	g.VertexSet[newMergedVertex] = true

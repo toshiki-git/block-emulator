@@ -86,14 +86,13 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 		fmt.Println("Case 1: Neither u nor v is merged")
 		newMergedAddr := utils.GenerateEthereumAddress(u.Addr + v.Addr)
 		newMergedVertex = Vertex{Addr: newMergedAddr, IsMerged: true}
-		cs.AddVertex(newMergedVertex)
 
 		// Register both u and v to the new merged vertex
 		cs.MergedContracts[u.Addr] = newMergedVertex
 		cs.MergedContracts[v.Addr] = newMergedVertex
 
 		// Update the EdgeSet
-		cs.NetGraph.UpdateEdgesAfterMerge(u, v, newMergedVertex)
+		cs.NetGraph.UpdateEdgesForNewMerge(u, v, newMergedVertex)
 
 	} else if isMergedU && !isMergedV {
 		// Case 2: u is already merged, but v is not
@@ -102,7 +101,7 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 		cs.MergedContracts[v.Addr] = newMergedVertex
 
 		// Update the EdgeSet
-		cs.NetGraph.UpdateEdgesAfterMerge(v, v, newMergedVertex)
+		cs.NetGraph.UpdateEdgesForPartialMerge(v, newMergedVertex)
 
 	} else if !isMergedU && isMergedV {
 		// Case 2: v is already merged, but u is not
@@ -111,14 +110,16 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 		cs.MergedContracts[u.Addr] = newMergedVertex
 
 		// Update the EdgeSet
-		cs.NetGraph.UpdateEdgesAfterMerge(u, u, newMergedVertex)
+		cs.NetGraph.UpdateEdgesForPartialMerge(u, newMergedVertex)
 
 	} else {
 		// Case 3: Both u and v are already merged
 		fmt.Println("Case 3: Both u and v are already merged")
 		newMergedAddr := utils.GenerateEthereumAddress(u.Addr + v.Addr)
 		newMergedVertex = Vertex{Addr: newMergedAddr, IsMerged: true}
-		cs.AddVertex(newMergedVertex)
+
+		// Update the EdgeSet
+		cs.NetGraph.UpdateEdgesForDoubleMerge(mergedU, mergedV, newMergedVertex)
 
 		// Update MergedContracts to point to the new merged vertex
 		for oldAddr, mergedVertex := range cs.MergedContracts {
@@ -126,9 +127,6 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 				cs.MergedContracts[oldAddr] = newMergedVertex
 			}
 		}
-
-		// Update the EdgeSet
-		cs.NetGraph.UpdateEdgesAfterMerge(mergedU, mergedV, newMergedVertex)
 	}
 
 	return newMergedVertex
