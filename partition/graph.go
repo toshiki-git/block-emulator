@@ -64,13 +64,13 @@ func (g *Graph) RemoveEdge(u, v Vertex) {
 
 // Helper function to remove a vertex from a slice of vertices
 func removeFromSlice(slice []Vertex, vertex Vertex) []Vertex {
-	for i, v := range slice {
-		if v == vertex {
-			// Remove the vertex by creating a new slice without it
-			return append(slice[:i], slice[i+1:]...)
+	var newSlice []Vertex
+	for _, v := range slice {
+		if v != vertex {
+			newSlice = append(newSlice, v)
 		}
 	}
-	return slice
+	return newSlice
 }
 
 func (g *Graph) transferEdgesAndRemove(source, mergedVertex Vertex) {

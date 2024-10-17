@@ -79,6 +79,12 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 	mergedU, isMergedU := cs.MergedContracts[u.Addr]
 	mergedV, isMergedV := cs.MergedContracts[v.Addr]
 
+	// mergedU と mergedV が同じ場合は実行しない
+	if u == v || (isMergedU && isMergedV && mergedU == mergedV) {
+		// fmt.Println("mergedU and mergedV are the same, no merge needed.")
+		return Vertex{}
+	}
+
 	var mergedVertex Vertex
 
 	// Define the merge conditions
@@ -90,7 +96,7 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 	switch {
 	case bothNotMerged:
 		// Case 1: Neither u nor v is merged
-		fmt.Println("Case 1: Neither u nor v is merged")
+		// fmt.Println("Case 1: Neither u nor v is merged")
 		newMergedAddr := utils.GenerateEthereumAddress(u.Addr + v.Addr)
 		mergedVertex = Vertex{Addr: newMergedAddr, IsMerged: true}
 
@@ -100,25 +106,31 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 
 		// Update the EdgeSet
 		cs.NetGraph.UpdateGraphForMerge(u, v, mergedVertex)
+		// TODO: どのシャードに割り当てるか決める
+
+		// delete(cs.PartitionMap, u)
+		// delete(cs.PartitionMap, v)
 	case uMergedOnly:
 		// Case 2: u is already merged, but v is not
-		fmt.Println("Case 2: u is already merged, but v is not")
+		// fmt.Println("Case 2: u is already merged, but v is not")
 		mergedVertex = mergedU
 		cs.MergedContracts[v.Addr] = mergedVertex
 
 		// Update the EdgeSet
 		cs.NetGraph.UpdateGraphForPartialMerge(v, mergedVertex)
+		// delete(cs.PartitionMap, v)
 	case vMergedOnly:
 		// Case 2: v is already merged, but u is not
-		fmt.Println("Case 2: v is already merged, but u is not")
+		// fmt.Println("Case 2: v is already merged, but u is not")
 		mergedVertex = mergedV
 		cs.MergedContracts[u.Addr] = mergedVertex
 
 		// Update the EdgeSet
 		cs.NetGraph.UpdateGraphForPartialMerge(u, mergedVertex)
+		// delete(cs.PartitionMap, u)
 	case bothMerged:
 		// Case 3: Both u and v are already merged
-		fmt.Println("Case 3: Both u and v are already merged")
+		// fmt.Println("Case 3: Both u and v are already merged")
 		newMergedAddr := utils.GenerateEthereumAddress(u.Addr + v.Addr)
 		mergedVertex = Vertex{Addr: newMergedAddr, IsMerged: true}
 
@@ -126,11 +138,12 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 		cs.NetGraph.UpdateGraphForMerge(mergedU, mergedV, mergedVertex)
 
 		// Update MergedContracts to point to the new merged vertex
-		for oldAddr, mergedVertex := range cs.MergedContracts {
-			if mergedVertex == mergedU || mergedVertex == mergedV {
-				cs.MergedContracts[oldAddr] = mergedVertex
-			}
-		}
+		cs.MergedContracts[u.Addr] = mergedVertex
+		cs.MergedContracts[v.Addr] = mergedVertex
+
+		// delete(cs.PartitionMap, mergedU)
+		// delete(cs.PartitionMap, mergedV)
+		// TODO: どのシャードに割り当てるか決める
 	default:
 		log.Panic("Invalid merge case")
 	}
