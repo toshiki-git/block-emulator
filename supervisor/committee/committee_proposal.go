@@ -38,6 +38,7 @@ type ProposalCommitteeModule struct {
 	modifiedMap         map[string]uint64 // key: address, value: shardID
 	clpaLastRunningTime time.Time
 	clpaFreq            int
+	MergedContracts     map[string]partition.Vertex
 
 	// logger module
 	sl *supervisor_log.SupervisorLog
@@ -66,6 +67,7 @@ func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *s
 		modifiedMap:         make(map[string]uint64),
 		clpaFreq:            clpaFrequency,
 		clpaLastRunningTime: time.Time{},
+		MergedContracts:     make(map[string]partition.Vertex),
 		IpNodeTable:         Ip_nodeTable,
 		Ss:                  Ss,
 		sl:                  sl,
@@ -214,6 +216,10 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 			for key, val := range mmap {
 				pcm.modifiedMap[key] = val
 			}
+
+			// マージされたコントラクトのマップがResetされないように
+			pcm.MergedContracts = pcm.ClpaGraph.MergedContracts
+
 			pcm.clpaReset()
 			pcm.clpaLock.Unlock()
 
@@ -244,6 +250,9 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 			for key, val := range mmap {
 				pcm.modifiedMap[key] = val
 			}
+
+			pcm.MergedContracts = pcm.ClpaGraph.MergedContracts
+
 			pcm.clpaReset()
 			pcm.clpaLock.Unlock()
 
@@ -280,6 +289,8 @@ func (pcm *ProposalCommitteeModule) clpaReset() {
 	for key, val := range pcm.modifiedMap {
 		pcm.ClpaGraph.PartitionMap[partition.Vertex{Addr: key}] = int(val)
 	}
+	// MergedContractsがResetされないように
+	pcm.ClpaGraph.MergedContracts = pcm.MergedContracts
 }
 
 func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
@@ -328,10 +339,6 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 				//fmt.Println("Merging contracts: ", itx.Sender, itx.Recipient)
 				pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 			}
-
-			if itx.RecipientIsContract && itx.SenderIsContract {
-				pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
-			}
 		}
 	}
 
@@ -370,10 +377,6 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 			// 両方のコントラクトがマージ対象の場合は、マージ操作を実行
 			if itx.SenderIsContract && itx.RecipientIsContract {
 				//fmt.Println("Merging contracts: ", itx.Sender, itx.Recipient)
-				pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
-			}
-
-			if itx.RecipientIsContract && itx.SenderIsContract {
 				pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 			}
 		}
