@@ -291,10 +291,12 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	}
 	pcm.clpaLock.Lock()
 	for _, tx := range b.InnerShardTxs {
-		// FOCUS:
 		pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, partition.Vertex{Addr: tx.Recipient})
 		if tx.RecipientIsContract {
 			for _, itx := range tx.InternalTxs {
+				if itx.RecipientIsContract && itx.SenderIsContract {
+					pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
+				}
 				pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 			}
 		}
@@ -303,6 +305,9 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 		pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: r2tx.Sender}, partition.Vertex{Addr: r2tx.Recipient})
 		if r2tx.RecipientIsContract {
 			for _, itx := range r2tx.InternalTxs {
+				if itx.RecipientIsContract && itx.SenderIsContract {
+					pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
+				}
 				pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 			}
 		}
