@@ -12,6 +12,7 @@ import (
 	"blockEmulator/utils"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"math/big"
@@ -291,24 +292,89 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	}
 	pcm.clpaLock.Lock()
 	for _, tx := range b.InnerShardTxs {
-		pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, partition.Vertex{Addr: tx.Recipient})
-		if tx.RecipientIsContract {
-			for _, itx := range tx.InternalTxs {
-				if itx.RecipientIsContract && itx.SenderIsContract {
-					pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
-				}
-				pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
+		if mergedVertex, ok := pcm.ClpaGraph.MergedContracts[tx.Recipient]; ok {
+			pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, mergedVertex)
+		} else {
+			pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, partition.Vertex{Addr: tx.Recipient})
+		}
+
+		for _, itx := range tx.InternalTxs {
+			mergedU, isMergedU := pcm.ClpaGraph.MergedContracts[itx.Recipient]
+			mergedV, isMergedV := pcm.ClpaGraph.MergedContracts[itx.Sender]
+
+			if isMergedU && isMergedV && mergedU == mergedV {
+				fmt.Println("Skipping internal transaction between merged contracts: ", itx.Sender, itx.Recipient)
+				continue
+			}
+
+			itxSender := partition.Vertex{Addr: itx.Sender}
+			itxRecipient := partition.Vertex{Addr: itx.Recipient}
+
+			// 送信者がすでにマージされているか確認
+			if mergedSenderVertex, ok := pcm.ClpaGraph.MergedContracts[itx.Sender]; ok {
+				itxSender = mergedSenderVertex
+			}
+
+			// 受信者がすでにマージされているか確認
+			if mergedRecipientVertex, ok := pcm.ClpaGraph.MergedContracts[itx.Recipient]; ok {
+				itxRecipient = mergedRecipientVertex
+			}
+
+			// マージされた送信者と受信者を使ってエッジを追加
+			pcm.ClpaGraph.AddEdge(itxSender, itxRecipient)
+
+			// 両方のコントラクトがマージ対象の場合は、マージ操作を実行
+			if itx.SenderIsContract && itx.RecipientIsContract {
+				//fmt.Println("Merging contracts: ", itx.Sender, itx.Recipient)
+				pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
+			}
+
+			if itx.RecipientIsContract && itx.SenderIsContract {
+				pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 			}
 		}
 	}
+
 	for _, r2tx := range b.Relay2Txs {
-		pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: r2tx.Sender}, partition.Vertex{Addr: r2tx.Recipient})
-		if r2tx.RecipientIsContract {
-			for _, itx := range r2tx.InternalTxs {
-				if itx.RecipientIsContract && itx.SenderIsContract {
-					pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
-				}
-				pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
+		if mergedVertex, ok := pcm.ClpaGraph.MergedContracts[r2tx.Recipient]; ok {
+			pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: r2tx.Sender}, mergedVertex)
+		} else {
+			pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: r2tx.Sender}, partition.Vertex{Addr: r2tx.Recipient})
+		}
+
+		for _, itx := range r2tx.InternalTxs {
+			mergedU, isMergedU := pcm.ClpaGraph.MergedContracts[itx.Recipient]
+			mergedV, isMergedV := pcm.ClpaGraph.MergedContracts[itx.Sender]
+
+			if isMergedU && isMergedV && mergedU == mergedV {
+				fmt.Println("Skipping internal transaction between merged contracts: ", itx.Sender, itx.Recipient)
+				continue
+			}
+
+			itxSender := partition.Vertex{Addr: itx.Sender}
+			itxRecipient := partition.Vertex{Addr: itx.Recipient}
+
+			// 送信者がすでにマージされているか確認
+			if mergedSenderVertex, ok := pcm.ClpaGraph.MergedContracts[itx.Sender]; ok {
+				itxSender = mergedSenderVertex
+			}
+
+			// 受信者がすでにマージされているか確認
+			if mergedRecipientVertex, ok := pcm.ClpaGraph.MergedContracts[itx.Recipient]; ok {
+				itxRecipient = mergedRecipientVertex
+			}
+
+			// マージされた送信者と受信者を使ってエッジを追加
+			pcm.ClpaGraph.AddEdge(itxSender, itxRecipient)
+
+			// 両方のコントラクトがマージ対象の場合は、マージ操作を実行
+			if itx.SenderIsContract && itx.RecipientIsContract {
+				//fmt.Println("Merging contracts: ", itx.Sender, itx.Recipient)
+				pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
+			}
+
+			if itx.RecipientIsContract && itx.SenderIsContract {
+				pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 			}
 		}
 	}
