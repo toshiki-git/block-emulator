@@ -80,8 +80,8 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 	mergedV, isMergedV := cs.MergedContracts[v.Addr]
 
 	// mergedU と mergedV が同じ場合は実行しない
-	if u == v || (isMergedU && isMergedV && mergedU == mergedV) {
-		// fmt.Println("mergedU and mergedV are the same, no merge needed.")
+	if u == v || (isMergedU && isMergedV && mergedU == mergedV && mergedU.Addr != "") {
+		fmt.Printf("同じ u: %s, v: %s, mergedU: %v, mergedV: %v\n", u.Addr, v.Addr, mergedU, mergedV)
 		return Vertex{}
 	}
 
@@ -108,8 +108,8 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 		cs.NetGraph.UpdateGraphForMerge(u, v, mergedVertex)
 		// TODO: どのシャードに割り当てるか決める
 
-		// delete(cs.PartitionMap, u)
-		// delete(cs.PartitionMap, v)
+		delete(cs.PartitionMap, u)
+		delete(cs.PartitionMap, v)
 	case uMergedOnly:
 		// Case 2: u is already merged, but v is not
 		// fmt.Println("Case 2: u is already merged, but v is not")
@@ -118,7 +118,7 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 
 		// Update the EdgeSet
 		cs.NetGraph.UpdateGraphForPartialMerge(v, mergedVertex)
-		// delete(cs.PartitionMap, v)
+		delete(cs.PartitionMap, v)
 	case vMergedOnly:
 		// Case 2: v is already merged, but u is not
 		// fmt.Println("Case 2: v is already merged, but u is not")
@@ -127,7 +127,7 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 
 		// Update the EdgeSet
 		cs.NetGraph.UpdateGraphForPartialMerge(u, mergedVertex)
-		// delete(cs.PartitionMap, u)
+		delete(cs.PartitionMap, u)
 	case bothMerged:
 		// Case 3: Both u and v are already merged
 		// fmt.Println("Case 3: Both u and v are already merged")
@@ -138,11 +138,17 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 		cs.NetGraph.UpdateGraphForMerge(mergedU, mergedV, mergedVertex)
 
 		// Update MergedContracts to point to the new merged vertex
-		cs.MergedContracts[u.Addr] = mergedVertex
-		cs.MergedContracts[v.Addr] = mergedVertex
+		/* cs.MergedContracts[u.Addr] = mergedVertex
+		cs.MergedContracts[v.Addr] = mergedVertex */
+		// 全部移動させる
+		for key, value := range cs.MergedContracts {
+			if value == mergedU || value == mergedV {
+				cs.MergedContracts[key] = mergedVertex
+			}
+		}
 
-		// delete(cs.PartitionMap, mergedU)
-		// delete(cs.PartitionMap, mergedV)
+		delete(cs.PartitionMap, mergedU)
+		delete(cs.PartitionMap, mergedV)
 		// TODO: どのシャードに割り当てるか決める
 	default:
 		log.Panic("Invalid merge case")

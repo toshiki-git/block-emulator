@@ -25,7 +25,7 @@ const (
 	IsLoadInternalTx        = true
 	IsSkipContractTx        = false // コントラクトのトランザクションをスキップするかどうか
 	BlockTxFilePath         = "../20000000to20249999_BlockTransaction_1000000rows.csv"
-	ReadBlockNumber         = 20000000
+	ReadBlockNumber         = 20000010
 	InternalTxFilePath      = "../selectedInternalTxs_10K.csv"
 )
 
@@ -672,7 +672,11 @@ func TestMergeContracts_RealData(t *testing.T) {
 	var txList []*core.Transaction
 
 	for _, data := range blockTxData {
-		tx, _ := data2txWithContract(data, internalTxMap)
+		tx, success := data2txWithContract(data, internalTxMap)
+		if success == false {
+			fmt.Printf("Error processing transaction data: %v", tx)
+			continue
+		}
 		txList = append(txList, tx)
 	}
 
@@ -681,49 +685,17 @@ func TestMergeContracts_RealData(t *testing.T) {
 		EdgeSet:   make(map[Vertex][]Vertex),
 	}
 
-	clpaState := CLPAState{NetGraph: graph}
-	clpaState.Init_CLPAState(WeightPenalty, MaxIterations, ShardNum)
 	clpaState_merged := CLPAState{NetGraph: graph}
 	clpaState_merged.Init_CLPAState(WeightPenalty, MaxIterations, ShardNum)
-
-	for _, tx := range txList {
-		if !isValidAddress2(tx.Sender) || !isValidAddress2(tx.Recipient) {
-			fmt.Printf("Skipping invalid address: from %s, to %s\n", tx.Sender, tx.Recipient)
-			continue
-		}
-		txSender := Vertex{Addr: tx.Sender}
-		txRecipient := Vertex{Addr: tx.Recipient}
-		if tx.RecipientIsContract {
-			contractAddrs[tx.Recipient] = true
-		}
-
-		clpaState.AddEdge(txSender, txRecipient)
-		for _, itx := range tx.InternalTxs {
-			if !isValidAddress2(itx.Sender) || !isValidAddress2(itx.Recipient) {
-				fmt.Printf("Skipping invalid address: from %s, to %s\n", tx.Sender, tx.Recipient)
-				continue
-			}
-
-			if itx.SenderIsContract {
-				contractAddrs[itx.Sender] = true
-			}
-
-			if itx.RecipientIsContract {
-				contractAddrs[itx.Recipient] = true
-			}
-
-			itxSender := Vertex{Addr: itx.Sender}
-			itxRecipient := Vertex{Addr: itx.Recipient}
-			clpaState.AddEdge(itxSender, itxRecipient)
-		}
-	}
-	clpaState.Init_Partition()
-	writeGraphToDotFile("initial_partition.dot", clpaState, contractAddrs)
 
 	for _, tx := range txList {
 		// アドレスが有効であるか確認
 		if !isValidAddress2(tx.Sender) || !isValidAddress2(tx.Recipient) {
 			fmt.Printf("Skipping invalid address: from %s, to %s\n", tx.Sender, tx.Recipient)
+			continue
+		}
+
+		if tx.Sender == tx.Recipient {
 			continue
 		}
 
@@ -746,6 +718,18 @@ func TestMergeContracts_RealData(t *testing.T) {
 				continue
 			}
 
+			if itx.Sender == itx.Recipient {
+				continue
+			}
+
+			mergedU, isMergedU := clpaState_merged.MergedContracts[itx.Recipient]
+			mergedV, isMergedV := clpaState_merged.MergedContracts[itx.Sender]
+
+			if isMergedU && isMergedV && mergedU == mergedV {
+				fmt.Println("Skipping internal transaction between merged contracts: ", itx.Sender, itx.Recipient)
+				continue
+			}
+
 			// 内部トランザクションの送信者と受信者の頂点を作成
 			itxSender := Vertex{Addr: itx.Sender}
 			itxRecipient := Vertex{Addr: itx.Recipient}
@@ -765,17 +749,20 @@ func TestMergeContracts_RealData(t *testing.T) {
 
 			// 両方のコントラクトがマージ対象の場合は、マージ操作を実行
 			if itx.SenderIsContract && itx.RecipientIsContract {
+				//fmt.Println("Merging contracts: ", itx.Sender, itx.Recipient)
 				clpaState_merged.MergeContracts(Vertex{Addr: itx.Sender}, Vertex{Addr: itx.Recipient})
 			}
 		}
 	}
-	fmt.Println("MergedContracts:")
-	for _, value := range clpaState_merged.MergedContracts {
-		// fmt.Printf("Key: %s, Value: %s\n", key, value.Addr)
-		mergedVertex[value.Addr] = true
-	}
+
 	clpaState_merged.Init_Partition()
 	clpaState_merged.CLPA_Partition()
+
+	fmt.Println("MergedContracts:")
+	for _, value := range clpaState_merged.MergedContracts {
+		//fmt.Printf("Key: %s, Value: %s\n", key, value.Addr)
+		mergedVertex[value.Addr] = true
+	}
 	writeGraphToDotFileWithMerge("merged_partition.dot", clpaState_merged, contractAddrs, mergedVertex)
 }
 
