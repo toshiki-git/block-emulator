@@ -47,3 +47,21 @@ func WriteMetricsToCSV(fileName string, colName []string, colVals [][]string) {
 		writer.Flush()
 	}
 }
+
+func sum(numbers []int) int {
+	sum := 0
+	for _, number := range numbers {
+		sum += number
+	}
+	return sum
+}
+
+func uniqueValueCount[K comparable, V comparable](m map[K]V) int {
+	uniqueValues := make(map[V]struct{}) // 値のセットを作成
+
+	for _, v := range m {
+		uniqueValues[v] = struct{}{} // 値をセットに追加
+	}
+
+	return len(uniqueValues) // ユニークな値の数を返す
+}

@@ -4,6 +4,7 @@ import (
 	"blockEmulator/partition"
 	"fmt"
 	"strconv"
+	"time"
 )
 
 // to test cross-transaction rate
@@ -15,6 +16,9 @@ type TestModule_CLPA struct {
 	vertexNum         []int
 	totalVertexNum    []int
 	edges2Shard       [][]int
+	mergedVertexNum   []int
+	mergedContractNum []int
+	executionTime     []time.Duration
 }
 
 func NewTestModule_CLPA() *TestModule_CLPA {
@@ -25,6 +29,9 @@ func NewTestModule_CLPA() *TestModule_CLPA {
 		vertexNum:         make([]int, 0),
 		totalVertexNum:    make([]int, 0),
 		edges2Shard:       make([][]int, 0),
+		mergedVertexNum:   make([]int, 0),
+		mergedContractNum: make([]int, 0),
+		executionTime:     make([]time.Duration, 0),
 	}
 }
 
@@ -39,6 +46,9 @@ func (tg *TestModule_CLPA) UpdateMeasureRecord(cs *partition.CLPAState) {
 	tg.totalVertexNum = append(tg.totalVertexNum, len(cs.PartitionMap))
 	tg.crossShardEdgeNum = append(tg.crossShardEdgeNum, cs.CrossShardEdgeNum)
 	tg.edges2Shard = append(tg.edges2Shard, cs.Edges2Shard)
+	tg.mergedVertexNum = append(tg.mergedVertexNum, uniqueValueCount(cs.MergedContracts))
+	tg.mergedContractNum = append(tg.mergedContractNum, len(cs.MergedContracts))
+	tg.executionTime = append(tg.executionTime, cs.ExecutionTime)
 }
 
 func (tg *TestModule_CLPA) HandleExtraMessage([]byte) {}
@@ -50,7 +60,17 @@ func (tg *TestModule_CLPA) OutputRecord() (perEpochLatency []float64, totLatency
 
 func (tg *TestModule_CLPA) writeToCSV() {
 	fileName := tg.OutputMetricName()
-	measureName := []string{"EpochID", "crossShardEdgeNum", "vertexsNumInShard", "vertexNum", "totalVertexNum", "edges2Shard"}
+	measureName := []string{
+		"EpochID",
+		"crossShardEdgeNum",
+		"vertexsNumInShard",
+		"vertexNum",
+		"totalVertexNum",
+		"edges2Shard",
+		"mergedVertexNum",
+		"mergedContractNum",
+		"executionTime"}
+
 	measureVals := make([][]string, 0)
 
 	for i, eid := range tg.epochID {
@@ -61,16 +81,11 @@ func (tg *TestModule_CLPA) writeToCSV() {
 			strconv.Itoa(tg.vertexNum[i]),
 			strconv.Itoa(tg.totalVertexNum[i]),
 			fmt.Sprint(tg.edges2Shard[i]),
+			strconv.Itoa(tg.mergedVertexNum[i]),
+			strconv.Itoa(tg.mergedContractNum[i]),
+			tg.executionTime[i].String(),
 		}
 		measureVals = append(measureVals, csvLine)
 	}
 	WriteMetricsToCSV(fileName, measureName, measureVals)
-}
-
-func sum(numbers []int) int {
-	sum := 0
-	for _, number := range numbers {
-		sum += number
-	}
-	return sum
 }

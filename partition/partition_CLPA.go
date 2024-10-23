@@ -13,6 +13,7 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"time"
 )
 
 // State of the Constraint Label Propagation Algorithm (CLPA)
@@ -28,6 +29,7 @@ type CLPAState struct {
 	ShardNum          int            // Number of shards
 	GraphHash         []byte
 	MergedContracts   map[string]Vertex //key: address, value: mergedVertex
+	ExecutionTime     time.Duration
 }
 
 func (graph *CLPAState) Hash() []byte {
@@ -106,7 +108,8 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 
 		// Update the EdgeSet
 		cs.NetGraph.UpdateGraphForMerge(u, v, mergedVertex)
-		// TODO: どのシャードに割り当てるか決める
+		// TODO: どのシャードに割り当てるか決める(uのシャードを使っている)
+		cs.PartitionMap[mergedVertex] = cs.PartitionMap[u]
 
 		delete(cs.PartitionMap, u)
 		delete(cs.PartitionMap, v)
@@ -138,8 +141,6 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 		cs.NetGraph.UpdateGraphForMerge(mergedU, mergedV, mergedVertex)
 
 		// Update MergedContracts to point to the new merged vertex
-		/* cs.MergedContracts[u.Addr] = mergedVertex
-		cs.MergedContracts[v.Addr] = mergedVertex */
 		// 全部移動させる
 		for key, value := range cs.MergedContracts {
 			if value == mergedU || value == mergedV {
@@ -149,7 +150,8 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 
 		delete(cs.PartitionMap, mergedU)
 		delete(cs.PartitionMap, mergedV)
-		// TODO: どのシャードに割り当てるか決める
+		// TODO: どのシャードに割り当てるか決める(mergedUのシャードを使っている)
+		cs.PartitionMap[mergedVertex] = cs.PartitionMap[mergedU]
 	default:
 		log.Panic("Invalid merge case")
 	}
@@ -354,6 +356,8 @@ func (cs *CLPAState) CLPA_Partition() (map[string]uint64, int) {
 	res := make(map[string]uint64)
 	updateTreshold := make(map[string]int)
 
+	startTime := time.Now()
+
 	for iter := 0; iter < cs.MaxIterations; iter += 1 { // The outer loop controls the number of iterations, constraint
 		for v := range cs.NetGraph.VertexSet {
 			if updateTreshold[v.Addr] >= 50 {
@@ -386,6 +390,11 @@ func (cs *CLPAState) CLPA_Partition() (map[string]uint64, int) {
 			}
 		}
 	}
+
+	endTime := time.Now()
+
+	executionTime := endTime.Sub(startTime) // 実行時間を計算
+	cs.ExecutionTime = executionTime
 
 	/* 	for sid, n := range cs.VertexsNumInShard {
 		fmt.Printf("%d has vertexs: %d\n", sid, n)
