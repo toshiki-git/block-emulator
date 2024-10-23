@@ -301,88 +301,63 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	if b.BlockBodyLength == 0 {
 		return
 	}
+
 	pcm.clpaLock.Lock()
-	for _, tx := range b.InnerShardTxs {
+	defer pcm.clpaLock.Unlock()
+
+	// コミットされたブロックでグラフを更新
+	pcm.processTransactions(b.InnerShardTxs)
+	pcm.processTransactions(b.Relay2Txs)
+}
+
+func (pcm *ProposalCommitteeModule) processTransactions(txs []*core.Transaction) {
+	for _, tx := range txs {
 		if mergedVertex, ok := pcm.ClpaGraph.MergedContracts[tx.Recipient]; ok {
 			pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, mergedVertex)
 		} else {
 			pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, partition.Vertex{Addr: tx.Recipient})
 		}
 
+		// 内部トランザクションを処理
 		for _, itx := range tx.InternalTxs {
-			mergedU, isMergedU := pcm.ClpaGraph.MergedContracts[itx.Recipient]
-			mergedV, isMergedV := pcm.ClpaGraph.MergedContracts[itx.Sender]
-
-			if isMergedU && isMergedV && mergedU == mergedV {
+			if pcm.shouldSkipInternalTx(itx) {
+				// Edgeを追加しない
 				fmt.Println("Skipping internal transaction between merged contracts: ", itx.Sender, itx.Recipient)
 				continue
 			}
-
-			itxSender := partition.Vertex{Addr: itx.Sender}
-			itxRecipient := partition.Vertex{Addr: itx.Recipient}
-
-			// 送信者がすでにマージされているか確認
-			if mergedSenderVertex, ok := pcm.ClpaGraph.MergedContracts[itx.Sender]; ok {
-				itxSender = mergedSenderVertex
-			}
-
-			// 受信者がすでにマージされているか確認
-			if mergedRecipientVertex, ok := pcm.ClpaGraph.MergedContracts[itx.Recipient]; ok {
-				itxRecipient = mergedRecipientVertex
-			}
-
-			// マージされた送信者と受信者を使ってエッジを追加
-			pcm.ClpaGraph.AddEdge(itxSender, itxRecipient)
-
-			// 両方のコントラクトがマージ対象の場合は、マージ操作を実行
-			if itx.SenderIsContract && itx.RecipientIsContract {
-				//fmt.Println("Merging contracts: ", itx.Sender, itx.Recipient)
-				pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
-			}
+			pcm.processInternalTx(itx)
 		}
 	}
+}
 
-	for _, r2tx := range b.Relay2Txs {
-		if mergedVertex, ok := pcm.ClpaGraph.MergedContracts[r2tx.Recipient]; ok {
-			pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: r2tx.Sender}, mergedVertex)
-		} else {
-			pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: r2tx.Sender}, partition.Vertex{Addr: r2tx.Recipient})
-		}
+// 内部トランザクション処理
+func (pcm *ProposalCommitteeModule) processInternalTx(itx *core.InternalTransaction) {
+	itxSender := pcm.getMergedVertex(itx.Sender)
+	itxRecipient := pcm.getMergedVertex(itx.Recipient)
 
-		for _, itx := range r2tx.InternalTxs {
-			mergedU, isMergedU := pcm.ClpaGraph.MergedContracts[itx.Recipient]
-			mergedV, isMergedV := pcm.ClpaGraph.MergedContracts[itx.Sender]
+	// マージされた送信者と受信者を使ってエッジを追加
+	pcm.ClpaGraph.AddEdge(itxSender, itxRecipient)
 
-			if isMergedU && isMergedV && mergedU == mergedV {
-				fmt.Println("Skipping internal transaction between merged contracts: ", itx.Sender, itx.Recipient)
-				continue
-			}
-
-			itxSender := partition.Vertex{Addr: itx.Sender}
-			itxRecipient := partition.Vertex{Addr: itx.Recipient}
-
-			// 送信者がすでにマージされているか確認
-			if mergedSenderVertex, ok := pcm.ClpaGraph.MergedContracts[itx.Sender]; ok {
-				itxSender = mergedSenderVertex
-			}
-
-			// 受信者がすでにマージされているか確認
-			if mergedRecipientVertex, ok := pcm.ClpaGraph.MergedContracts[itx.Recipient]; ok {
-				itxRecipient = mergedRecipientVertex
-			}
-
-			// マージされた送信者と受信者を使ってエッジを追加
-			pcm.ClpaGraph.AddEdge(itxSender, itxRecipient)
-
-			// 両方のコントラクトがマージ対象の場合は、マージ操作を実行
-			if itx.SenderIsContract && itx.RecipientIsContract {
-				//fmt.Println("Merging contracts: ", itx.Sender, itx.Recipient)
-				pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
-			}
-		}
+	// 両方がコントラクトの場合はマージ操作を実行
+	if itx.SenderIsContract && itx.RecipientIsContract {
+		// ATTENTION: MergeContractsの引数は、partition.Vertex{Addr: itx.Sender}これを使う
+		pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 	}
-	pcm.clpaLock.Unlock()
+}
 
+// マージされた頂点を取得
+func (pcm *ProposalCommitteeModule) getMergedVertex(addr string) partition.Vertex {
+	if mergedVertex, ok := pcm.ClpaGraph.MergedContracts[addr]; ok {
+		return mergedVertex
+	}
+	return partition.Vertex{Addr: addr}
+}
+
+// 内部トランザクションをスキップするかどうかの判定
+func (pcm *ProposalCommitteeModule) shouldSkipInternalTx(itx *core.InternalTransaction) bool {
+	mergedU, isMergedU := pcm.ClpaGraph.MergedContracts[itx.Recipient]
+	mergedV, isMergedV := pcm.ClpaGraph.MergedContracts[itx.Sender]
+	return isMergedU && isMergedV && mergedU == mergedV
 }
 
 func (pcm *ProposalCommitteeModule) LoadInternalTxsFromCSV() map[string][]*core.InternalTransaction {
