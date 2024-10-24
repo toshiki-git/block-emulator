@@ -3,6 +3,7 @@ package dataSupport
 import (
 	"blockEmulator/core"
 	"blockEmulator/message"
+	"blockEmulator/partition"
 	"sync"
 )
 
@@ -22,6 +23,8 @@ type Data_supportCLPA struct {
 
 	CollectOver bool       // judge whether all txs is collected or not
 	CollectLock sync.Mutex // lock for collect
+
+	MergedContracts []map[string]partition.Vertex // key: address, value: mergedVertex
 }
 
 func NewCLPADataSupport() *Data_supportCLPA {
@@ -35,5 +38,6 @@ func NewCLPADataSupport() *Data_supportCLPA {
 		PartitionReady:          make(map[uint64]bool),
 		CollectOver:             false,
 		ReadySeq:                make(map[uint64]uint64),
+		MergedContracts:         make([]map[string]partition.Vertex, 0),
 	}
 }

@@ -23,7 +23,7 @@ func (crom *ProposalRelayOutsideModule) HandleMessageOutsidePBFT(msgType message
 
 	// messages about CLPA
 	case message.CPartitionMsg:
-		crom.handlePartitionMsg(content)
+		crom.handlePartitionMsg(content) //TODO: ここで、MergedContractを受け取る処理を追加する
 	case message.AccountState_and_TX:
 		crom.handleAccountStateAndTxMsg(content)
 	case message.CPartitionReady:
@@ -66,7 +66,10 @@ func (crom *ProposalRelayOutsideModule) handlePartitionMsg(content []byte) {
 	if err != nil {
 		log.Panic()
 	}
+
 	crom.cdm.ModifiedMap = append(crom.cdm.ModifiedMap, pm.PartitionModified)
+	// TODO: ここで、MergedContractを受け取りたい
+	crom.cdm.MergedContracts = append(crom.cdm.MergedContracts, pm.MergedContracts)
 	crom.pbftNode.pl.Plog.Printf("S%dN%d : has received partition message\n", crom.pbftNode.ShardID, crom.pbftNode.NodeID)
 	crom.cdm.PartitionOn = true
 }

@@ -6,6 +6,7 @@ package chain
 import (
 	"blockEmulator/core"
 	"blockEmulator/params"
+	"blockEmulator/partition"
 	"blockEmulator/storage"
 	"blockEmulator/utils"
 	"bytes"
@@ -24,14 +25,15 @@ import (
 )
 
 type BlockChain struct {
-	db           ethdb.Database      // the leveldb database to store in the disk, for status trie
-	triedb       *trie.Database      // the trie database which helps to store the status trie
-	ChainConfig  *params.ChainConfig // the chain configuration, which can help to identify the chain
-	CurrentBlock *core.Block         // the top block in this blockchain
-	Storage      *storage.Storage    // Storage is the bolt-db to store the blocks
-	Txpool       *core.TxPool        // the transaction pool
-	PartitionMap map[string]uint64   // the partition map which is defined by some algorithm can help account parition
-	pmlock       sync.RWMutex
+	db              ethdb.Database              // the leveldb database to store in the disk, for status trie
+	triedb          *trie.Database              // the trie database which helps to store the status trie
+	ChainConfig     *params.ChainConfig         // the chain configuration, which can help to identify the chain
+	CurrentBlock    *core.Block                 // the top block in this blockchain
+	Storage         *storage.Storage            // Storage is the bolt-db to store the blocks
+	Txpool          *core.TxPool                // the transaction pool
+	PartitionMap    map[string]uint64           // the partition map which is defined by some algorithm can help account parition
+	MergedContracts map[string]partition.Vertex // key: address, value: mergedVertex
+	pmlock          sync.RWMutex
 }
 
 // Get the transaction root, this root can be used to check the transactions
@@ -61,10 +63,22 @@ func (bc *BlockChain) Update_PartitionMap(key string, val uint64) {
 	bc.PartitionMap[key] = val
 }
 
+func (bc *BlockChain) Update_MergedContracts(key string, val partition.Vertex) {
+	bc.pmlock.Lock()
+	defer bc.pmlock.Unlock()
+	bc.MergedContracts[key] = val
+}
+
 // Get parition (if not exist, return default)
 func (bc *BlockChain) Get_PartitionMap(key string) uint64 {
 	bc.pmlock.RLock()
 	defer bc.pmlock.RUnlock()
+
+	// My Add Code
+	if mergedVertex, ok := bc.MergedContracts[key]; ok {
+		key = mergedVertex.Addr
+	}
+
 	if _, ok := bc.PartitionMap[key]; !ok {
 		return uint64(utils.Addr2Shard(key))
 	}

@@ -81,7 +81,12 @@ func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *s
 
 func (pcm *ProposalCommitteeModule) HandleOtherMessage([]byte) {}
 
+// アドレスからシャードIDを取得、なければデフォルトの値を返す
 func (pcm *ProposalCommitteeModule) fetchModifiedMap(key string) uint64 {
+	if mergedVertex, ok := pcm.ClpaGraph.MergedContracts[key]; ok {
+		key = mergedVertex.Addr
+	}
+
 	if val, ok := pcm.modifiedMap[key]; !ok {
 		return uint64(utils.Addr2Shard(key))
 	} else {
@@ -270,6 +275,7 @@ func (pcm *ProposalCommitteeModule) clpaMapSend(m map[string]uint64) {
 	// send partition modified Map message
 	pm := message.PartitionModifiedMap{
 		PartitionModified: m,
+		MergedContracts:   pcm.MergedContracts, // MergedContractsを追加
 	}
 	pmByte, err := json.Marshal(pm)
 	if err != nil {

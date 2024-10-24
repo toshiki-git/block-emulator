@@ -23,6 +23,7 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinPropose() (bool, *message.
 	if pphm.cdm.PartitionOn {
 		pphm.sendPartitionReady()
 		for !pphm.getPartitionReady() {
+			pphm.pbftNode.pl.Plog.Println("各シャードのPartitionReadyがすべてtrueになるまでgetPartitionReady()で待機します。")
 			time.Sleep(time.Second)
 		}
 		// send accounts and txs
@@ -96,12 +97,13 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 		pphm.pbftNode.pl.Plog.Printf("S%dN%d : main node is trying to send relay txs at height = %d \n", pphm.pbftNode.ShardID, pphm.pbftNode.NodeID, block.Header.Number)
 		// generate relay pool and collect txs excuted
 		pphm.pbftNode.CurChain.Txpool.RelayPool = make(map[uint64][]*core.Transaction)
-		interShardTxs := make([]*core.Transaction, 0)
+		innerShardTxs := make([]*core.Transaction, 0) // interからinnerにtypeミスを修正
 		relay1Txs := make([]*core.Transaction, 0)
 		relay2Txs := make([]*core.Transaction, 0)
 
 		for _, tx := range block.Body {
 			ssid := pphm.pbftNode.CurChain.Get_PartitionMap(tx.Sender)
+			// TODO: Receipientがmergeされているか確認
 			rsid := pphm.pbftNode.CurChain.Get_PartitionMap(tx.Recipient)
 			if !tx.Relayed && ssid != pphm.pbftNode.ShardID {
 				log.Panic("incorrect tx")
@@ -117,7 +119,7 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 				if tx.Relayed {
 					relay2Txs = append(relay2Txs, tx)
 				} else {
-					interShardTxs = append(interShardTxs, tx)
+					innerShardTxs = append(innerShardTxs, tx)
 				}
 			}
 		}
@@ -133,7 +135,7 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 		// add more message to measure more metrics
 		bim := message.BlockInfoMsg{
 			BlockBodyLength: len(block.Body),
-			InnerShardTxs:   interShardTxs,
+			InnerShardTxs:   innerShardTxs,
 			Epoch:           int(pphm.cdm.AccountTransferRound),
 
 			Relay1Txs: relay1Txs,

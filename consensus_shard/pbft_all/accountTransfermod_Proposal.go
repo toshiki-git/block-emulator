@@ -61,6 +61,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 	lastMapid := len(cphm.cdm.ModifiedMap) - 1
 	for key, val := range cphm.cdm.ModifiedMap[lastMapid] { //key is the address, val is the shardID
 		if val != cphm.pbftNode.ShardID && cphm.pbftNode.CurChain.Get_PartitionMap(key) == cphm.pbftNode.ShardID {
+			// ModifiedMapのアカウントが現在のシャードになくて、かつ自分のシャードに所属していることを確認
 			accountToFetch = append(accountToFetch, key) //移動するアカウントだけを抽出
 		}
 	}
@@ -159,10 +160,11 @@ func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message
 		atmAs = append(atmAs, val)
 	}
 	atm := message.AccountTransferMsg{
-		ModifiedMap:  cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound],
-		Addrs:        atmaddr,
-		AccountState: atmAs,
-		ATid:         uint64(len(cphm.cdm.ModifiedMap)),
+		ModifiedMap:     cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound],
+		MergedContracts: cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound],
+		Addrs:           atmaddr,
+		AccountState:    atmAs,
+		ATid:            uint64(len(cphm.cdm.ModifiedMap)),
 	}
 	atmbyte := atm.Encode()
 	r := &message.Request{
@@ -183,6 +185,12 @@ func (cphm *ProposalPbftInsideExtraHandleMod) accountTransfer_do(atm *message.Ac
 		cnt++
 		cphm.pbftNode.CurChain.Update_PartitionMap(key, val)
 	}
+
+	// TODO: mergedContractを更新する
+	for key, val := range atm.MergedContracts {
+		cphm.pbftNode.CurChain.Update_MergedContracts(key, val)
+	}
+
 	cphm.pbftNode.pl.Plog.Printf("%d key-vals are updated\n", cnt)
 	// add the account into the state trie
 	cphm.pbftNode.pl.Plog.Printf("%d addrs to add\n", len(atm.Addrs))
