@@ -8,6 +8,7 @@ import (
 	"blockEmulator/core"
 	"blockEmulator/message"
 	"blockEmulator/networks"
+	"blockEmulator/partition"
 	"encoding/json"
 	"log"
 	"time"
@@ -45,6 +46,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) getPartitionReady() bool {
 	cphm.cdm.ReadySeqLock.Lock()
 	defer cphm.cdm.ReadySeqLock.Unlock()
 
+	// TODO: 理解する
 	flag := true
 	for sid, val := range cphm.pbftNode.seqIDMap {
 		if rval, ok := cphm.cdm.ReadySeq[sid]; !ok || (rval-1 != val) {
@@ -57,15 +59,29 @@ func (cphm *ProposalPbftInsideExtraHandleMod) getPartitionReady() bool {
 // send the transactions and the accountState to other leaders
 func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 	// generate accout transfer and txs message
-	accountToFetch := make([]string, 0)
-	lastMapid := len(cphm.cdm.ModifiedMap) - 1
+	accountToFetch := make([]string, 0)        // mergedVertexは含めないようにする
+	lastMapid := len(cphm.cdm.ModifiedMap) - 1 // 最初は0
+	cphm.pbftNode.pl.Plog.Println("sendAccounts_and_Txs(): lastMapidは", lastMapid)
 	for key, val := range cphm.cdm.ModifiedMap[lastMapid] { //key is the address, val is the shardID
-		if val != cphm.pbftNode.ShardID && cphm.pbftNode.CurChain.Get_PartitionMap(key) == cphm.pbftNode.ShardID {
-			// ModifiedMapのアカウントが現在のシャードになくて、かつ自分のシャードに所属していることを確認
-			accountToFetch = append(accountToFetch, key) //移動するアカウントだけを抽出
+		// ModifiedMapがすべてのアカウントを含んでないので、そこでエラーになる可能性がある
+		if addrs, ok := cphm.cdm.ReversedMergedContracts[lastMapid][partition.Vertex{Addr: key, IsMerged: true}]; ok {
+			// mergedVertexはaccountToFetchに含めない
+			for _, addr := range addrs {
+				if cphm.pbftNode.CurChain.Get_PartitionMap(addr) != val {
+					accountToFetch = append(accountToFetch, addr)
+				}
+			}
+			continue
+		}
+
+		// ModifiedMapのアカウントが現在のシャードになくて、かつ自分のシャードに所属していることを確認
+		if val != cphm.pbftNode.ShardID && cphm.pbftNode.CurChain.Get_PartitionMap(key) == cphm.pbftNode.ShardID { // cphm.pbftNode.CurChain.Get_PartitionMapはまだ更新されてない
+			// TODO: MergedContractの最初のデプロイ先のシャードが重要になるそこでエラーになる可能性があるそこをなおす
+			accountToFetch = append(accountToFetch, key) // 移動するアカウントだけを抽出
 		}
 	}
 	asFetched := cphm.pbftNode.CurChain.FetchAccounts(accountToFetch)
+
 	// send the accounts to other shards
 	cphm.pbftNode.CurChain.Txpool.GetLocked()
 	cphm.pbftNode.pl.Plog.Println("sendAccounts_and_Txs(): The size of tx pool is: ", len(cphm.pbftNode.CurChain.Txpool.TxQueue))
@@ -78,6 +94,15 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 		asSend := make([]*core.AccountState, 0)
 		for idx, addr := range accountToFetch {
 			// if the account is in the shard i, then send it
+			//　shard iに移動するべきアカウントをピックアップ
+			if mergedVertex, ok := cphm.cdm.MergedContracts[lastMapid][addr]; ok {
+				if cphm.cdm.ModifiedMap[lastMapid][mergedVertex.Addr] == i {
+					addrSend = append(addrSend, addr)
+					addrSet[addr] = true
+					asSend = append(asSend, asFetched[idx])
+				}
+				continue
+			}
 			if cphm.cdm.ModifiedMap[lastMapid][addr] == i {
 				addrSend = append(addrSend, addr)
 				addrSet[addr] = true
@@ -90,9 +115,11 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 		for secondPtr := 0; secondPtr < len(cphm.pbftNode.CurChain.Txpool.TxQueue); secondPtr++ {
 			ptx := cphm.pbftNode.CurChain.Txpool.TxQueue[secondPtr]
 			// if this is a normal transaction or ctx1 before re-sharding && the addr is correspond
+			// まだRelayedされてないときはSender側のシャードにTXを移動
 			_, ok1 := addrSet[ptx.Sender]
 			condition1 := ok1 && !ptx.Relayed
 			// if this tx is ctx2
+			// RelayedされているときはRecipient側のシャードにTXを移動
 			_, ok2 := addrSet[ptx.Recipient]
 			condition2 := ok2 && ptx.Relayed
 			if condition1 || condition2 {
@@ -103,6 +130,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 			}
 		}
 		cphm.pbftNode.CurChain.Txpool.TxQueue = cphm.pbftNode.CurChain.Txpool.TxQueue[:firstPtr]
+		cphm.pbftNode.pl.Plog.Printf("sendAccounts_and_Txs(): シャード %d に %d 個のトランザクションを送信\n", i, len(txSend))
 
 		cphm.pbftNode.pl.Plog.Printf("The txSend to shard %d is generated \n", i)
 		ast := message.AccountStateAndTx{
@@ -143,10 +171,25 @@ func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message
 	// propose, send all txs to other nodes in shard
 	cphm.pbftNode.pl.Plog.Println("The number of ReceivedNewTx: ", len(cphm.cdm.ReceivedNewTx))
 	for _, tx := range cphm.cdm.ReceivedNewTx {
-		if !tx.Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][tx.Sender] != cphm.pbftNode.ShardID {
+		//TODO: ここで発生しているエラーを解消する
+		var sender string
+		if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.Sender]; ok {
+			sender = mergedVertex.Addr
+		} else {
+			sender = tx.Sender
+		}
+
+		var recepient string
+		if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.Recipient]; ok {
+			recepient = mergedVertex.Addr
+		} else {
+			recepient = tx.Recipient
+		}
+
+		if !tx.Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][sender] != cphm.pbftNode.ShardID {
 			log.Panic("error tx")
 		}
-		if tx.Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][tx.Recipient] != cphm.pbftNode.ShardID {
+		if tx.Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][recepient] != cphm.pbftNode.ShardID {
 			log.Panic("error tx")
 		}
 	}
@@ -178,6 +221,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message
 }
 
 // all nodes in a shard will do accout Transfer, to sync the state trie
+// パーティションブロックがコミットされたときに呼び出される
 func (cphm *ProposalPbftInsideExtraHandleMod) accountTransfer_do(atm *message.AccountTransferMsg) {
 	// change the partition Map
 	cnt := 0
@@ -187,9 +231,12 @@ func (cphm *ProposalPbftInsideExtraHandleMod) accountTransfer_do(atm *message.Ac
 	}
 
 	// TODO: mergedContractを更新する
+	cnt1 := 0
 	for key, val := range atm.MergedContracts {
+		cnt1++
 		cphm.pbftNode.CurChain.Update_MergedContracts(key, val)
 	}
+	cphm.pbftNode.pl.Plog.Printf("%d MergedContractsが更新されました\n", cnt1)
 
 	cphm.pbftNode.pl.Plog.Printf("%d key-vals are updated\n", cnt)
 	// add the account into the state trie
@@ -197,10 +244,14 @@ func (cphm *ProposalPbftInsideExtraHandleMod) accountTransfer_do(atm *message.Ac
 	cphm.pbftNode.pl.Plog.Printf("%d accountstates to add\n", len(atm.AccountState))
 	cphm.pbftNode.CurChain.AddAccounts(atm.Addrs, atm.AccountState, cphm.pbftNode.view.Load())
 
+	// Insideモジュールに追加で、Leaderは実行されずに、ほかのノードのため
 	if uint64(len(cphm.cdm.ModifiedMap)) != atm.ATid {
+		cphm.pbftNode.pl.Plog.Println("ModifiedMapのInsideExtraHandleMod同期を行っています")
 		cphm.cdm.ModifiedMap = append(cphm.cdm.ModifiedMap, atm.ModifiedMap)
+		cphm.cdm.MergedContracts = append(cphm.cdm.MergedContracts, atm.MergedContracts)
+		cphm.cdm.ReversedMergedContracts = append(cphm.cdm.ReversedMergedContracts, ReverseMap(atm.MergedContracts))
 	}
-	cphm.cdm.AccountTransferRound = atm.ATid
+	cphm.cdm.AccountTransferRound = atm.ATid //最初のpartition proposeの時は1になる
 	cphm.cdm.AccountStateTx = make(map[uint64]*message.AccountStateAndTx)
 	cphm.cdm.ReceivedNewAccountState = make(map[string]*core.AccountState)
 	cphm.cdm.ReceivedNewTx = make([]*core.Transaction, 0)

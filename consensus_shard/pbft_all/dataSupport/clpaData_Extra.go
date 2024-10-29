@@ -24,7 +24,8 @@ type Data_supportCLPA struct {
 	CollectOver bool       // judge whether all txs is collected or not
 	CollectLock sync.Mutex // lock for collect
 
-	MergedContracts []map[string]partition.Vertex // key: address, value: mergedVertex
+	MergedContracts         []map[string]partition.Vertex   // key: address, value: mergedVertex
+	ReversedMergedContracts []map[partition.Vertex][]string // key: mergedVertex, value: address
 }
 
 func NewCLPADataSupport() *Data_supportCLPA {
@@ -39,5 +40,6 @@ func NewCLPADataSupport() *Data_supportCLPA {
 		CollectOver:             false,
 		ReadySeq:                make(map[uint64]uint64),
 		MergedContracts:         make([]map[string]partition.Vertex, 0),
+		ReversedMergedContracts: make([]map[partition.Vertex][]string, 0),
 	}
 }

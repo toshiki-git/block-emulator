@@ -1,6 +1,7 @@
 package committee
 
 import (
+	"blockEmulator/consensus_shard/pbft_all"
 	"blockEmulator/core"
 	"blockEmulator/message"
 	"blockEmulator/networks"
@@ -74,7 +75,9 @@ func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *s
 		curEpoch:            0,
 		internalTxMap:       make(map[string][]*core.InternalTransaction),
 	}
+
 	pcm.internalTxMap = pcm.LoadInternalTxsFromCSV()
+	pcm.sl.Slog.Println("Internal transactionsの読み込みが完了しました。")
 
 	return pcm
 }
@@ -83,9 +86,10 @@ func (pcm *ProposalCommitteeModule) HandleOtherMessage([]byte) {}
 
 // アドレスからシャードIDを取得、なければデフォルトの値を返す
 func (pcm *ProposalCommitteeModule) fetchModifiedMap(key string) uint64 {
-	if mergedVertex, ok := pcm.ClpaGraph.MergedContracts[key]; ok {
+	//TODO: ここでMergedContractsの複数のgoroutineでのアクセスを考慮する必要がある。senderしか見てないので下のコードは不要かも
+	/* if mergedVertex, ok := pcm.ClpaGraph.MergedContracts[key]; ok {
 		key = mergedVertex.Addr
-	}
+	} */
 
 	if val, ok := pcm.modifiedMap[key]; !ok {
 		return uint64(utils.Addr2Shard(key))
@@ -214,16 +218,32 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 		if !pcm.clpaLastRunningTime.IsZero() && time.Since(pcm.clpaLastRunningTime) >= time.Duration(pcm.clpaFreq)*time.Second {
 			pcm.clpaLock.Lock()
 			clpaCnt++
-			mmap, _ := pcm.ClpaGraph.CLPA_Partition()
+
+			// PartitionModified マップの書き込み処理
+			partitionFile, err := os.OpenFile(params.ExpDataRootDir+"/before_partition_modified.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				log.Fatalf("failed to open partition_modified.txt: %v", err)
+			}
+
+			partitionFile.WriteString(fmt.Sprintf("Epoch: %d\n", pcm.curEpoch))
+			for key, value := range pcm.ClpaGraph.PartitionMap {
+				line := fmt.Sprintf("%s: %d\n", key.Addr, value)
+				if _, err := partitionFile.WriteString(line); err != nil {
+					log.Fatalf("failed to write to partition_modified.txt: %v", err)
+				}
+			}
+			partitionFile.Close()
+
+			mmap, _ := pcm.ClpaGraph.CLPA_Partition() // mmapはPartitionMapとは違って、移動するもののみを含む
 			pcm.ClpaTest.UpdateMeasureRecord(pcm.ClpaGraph)
+
+			// マージされたコントラクトのマップがResetされないように. 更新してからclpaMapSendする
+			pcm.MergedContracts = pcm.ClpaGraph.MergedContracts
 
 			pcm.clpaMapSend(mmap)
 			for key, val := range mmap {
 				pcm.modifiedMap[key] = val
 			}
-
-			// マージされたコントラクトのマップがResetされないように
-			pcm.MergedContracts = pcm.ClpaGraph.MergedContracts
 
 			pcm.clpaReset()
 			pcm.clpaLock.Unlock()
@@ -248,15 +268,47 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 		if time.Since(pcm.clpaLastRunningTime) >= time.Duration(pcm.clpaFreq)*time.Second {
 			pcm.clpaLock.Lock()
 			clpaCnt++
-			mmap, _ := pcm.ClpaGraph.CLPA_Partition()
+
+			// PartitionModified マップの書き込み処理
+			partitionFile, err := os.OpenFile(params.ExpDataRootDir+"/before_partition_modified.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				log.Fatalf("failed to open before_partition_modified.txt: %v", err)
+			}
+
+			partitionFile.WriteString(fmt.Sprintf("Epoch: %d\n", pcm.curEpoch))
+			for key, value := range pcm.ClpaGraph.PartitionMap {
+				line := fmt.Sprintf("%s: %d\n", key.Addr, value)
+				if _, err := partitionFile.WriteString(line); err != nil {
+					log.Fatalf("failed to write to before_partition_modified.txt: %v", err)
+				}
+			}
+			partitionFile.Close()
+
+			// PartitionModified マップの書き込み処理
+			vertexSetFile, err := os.OpenFile(params.ExpDataRootDir+"/vertexSetFile.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				log.Fatalf("failed to open vertexSetFile.txt: %v", err)
+			}
+
+			vertexSetFile.WriteString(fmt.Sprintf("Epoch: %d\n", pcm.curEpoch))
+			for key, value := range pcm.ClpaGraph.NetGraph.VertexSet {
+				line := fmt.Sprintf("%v: %t\n", key.Addr, value)
+				if _, err := vertexSetFile.WriteString(line); err != nil {
+					log.Fatalf("failed to write to vertexSetFile.txt: %v", err)
+				}
+			}
+			vertexSetFile.Close()
+
+			mmap, _ := pcm.ClpaGraph.CLPA_Partition() // mmapはPartitionMapとは違って、移動するもののみを含む
 			pcm.ClpaTest.UpdateMeasureRecord(pcm.ClpaGraph)
+
+			// マージされたコントラクトのマップがResetされないように
+			pcm.MergedContracts = pcm.ClpaGraph.MergedContracts
 
 			pcm.clpaMapSend(mmap)
 			for key, val := range mmap {
 				pcm.modifiedMap[key] = val
 			}
-
-			pcm.MergedContracts = pcm.ClpaGraph.MergedContracts
 
 			pcm.clpaReset()
 			pcm.clpaLock.Unlock()
@@ -287,6 +339,49 @@ func (pcm *ProposalCommitteeModule) clpaMapSend(m map[string]uint64) {
 		go networks.TcpDial(send_msg, pcm.IpNodeTable[i][0])
 	}
 	pcm.sl.Slog.Println("Supervisor: all partition map message has been sent. ")
+
+	// PartitionModified マップの書き込み処理
+	partitionFile, err := os.OpenFile(params.ExpDataRootDir+"/partition_modified.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("failed to open partition_modified.txt: %v", err)
+	}
+	defer partitionFile.Close()
+	partitionFile.WriteString(fmt.Sprintf("Epoch: %d\n", pcm.curEpoch))
+	for key, value := range m {
+		line := fmt.Sprintf("%s: %d\n", key, value)
+		if _, err := partitionFile.WriteString(line); err != nil {
+			log.Fatalf("failed to write to partition_modified.txt: %v", err)
+		}
+	}
+
+	// MergedContracts マップの書き込み処理
+	mergedContractsFile, err := os.OpenFile(params.ExpDataRootDir+"/merged_contracts.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("failed to open merged_contracts.txt: %v", err)
+	}
+	defer mergedContractsFile.Close()
+	mergedContractsFile.WriteString(fmt.Sprintf("Epoch: %d\n", pcm.curEpoch))
+	for key, vertex := range pcm.MergedContracts {
+		line := fmt.Sprintf("%s: {Addr: %s, IsMerged: %t}\n", key, vertex.Addr, vertex.IsMerged)
+		if _, err := mergedContractsFile.WriteString(line); err != nil {
+			log.Fatalf("failed to write to merged_contracts.txt: %v", err)
+		}
+	}
+
+	// Reversed MergedContracts の書き込み処理
+	reversedMap := pbft_all.ReverseMap(pcm.MergedContracts)
+	reversedContractsFile, err := os.OpenFile(params.ExpDataRootDir+"/reversed_merged_contracts.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("failed to open reversed_merged_contracts.txt: %v", err)
+	}
+	defer reversedContractsFile.Close()
+
+	for vertex, addresses := range reversedMap {
+		line := fmt.Sprintf("{Addr: %s, IsMerged: %t}: %v\n", vertex.Addr, vertex.IsMerged, addresses)
+		if _, err := reversedContractsFile.WriteString(line); err != nil {
+			log.Fatalf("failed to write to reversed_merged_contracts.txt: %v", err)
+		}
+	}
 }
 
 func (pcm *ProposalCommitteeModule) clpaReset() {
@@ -312,6 +407,7 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	defer pcm.clpaLock.Unlock()
 
 	// コミットされたブロックでグラフを更新
+	pcm.sl.Slog.Printf("グラフを更新開始 InnerShardTxs: %d txs, Relay2Txs: %d txs", len(b.InnerShardTxs), len(b.Relay2Txs))
 	pcm.processTransactions(b.InnerShardTxs)
 	pcm.processTransactions(b.Relay2Txs)
 }
@@ -328,7 +424,6 @@ func (pcm *ProposalCommitteeModule) processTransactions(txs []*core.Transaction)
 		for _, itx := range tx.InternalTxs {
 			if pcm.shouldSkipInternalTx(itx) {
 				// Edgeを追加しない
-				fmt.Println("Skipping internal transaction between merged contracts: ", itx.Sender, itx.Recipient)
 				continue
 			}
 			pcm.processInternalTx(itx)

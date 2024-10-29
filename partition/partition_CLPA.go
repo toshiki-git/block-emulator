@@ -108,8 +108,8 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 
 		// Update the EdgeSet
 		cs.NetGraph.UpdateGraphForMerge(u, v, mergedVertex)
-		// TODO: どのシャードに割り当てるか決める(uのシャードを使っている)
-		cs.PartitionMap[mergedVertex] = cs.PartitionMap[u]
+		// TODO: どのシャードに割り当てるか決める ここを直しました
+		cs.PartitionMap[mergedVertex] = utils.Addr2Shard(mergedVertex.Addr)
 
 		delete(cs.PartitionMap, u)
 		delete(cs.PartitionMap, v)
@@ -150,8 +150,8 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 
 		delete(cs.PartitionMap, mergedU)
 		delete(cs.PartitionMap, mergedV)
-		// TODO: どのシャードに割り当てるか決める(mergedUのシャードを使っている)
-		cs.PartitionMap[mergedVertex] = cs.PartitionMap[mergedU]
+		// TODO: どのシャードに割り当てるか決める
+		cs.PartitionMap[mergedVertex] = utils.Addr2Shard(mergedVertex.Addr)
 	default:
 		log.Panic("Invalid merge case")
 	}
@@ -328,6 +328,7 @@ func (cs *CLPAState) getShard_score(v Vertex, uShard int) float64 {
 }
 
 // CLPA partitioning algorithm returns the partition map and the number of cross-shard edges
+// 戻り値は、イテレーションの中で移動したアカウントです。結局初期のシャードに割り当てられても、1→0→1なら戻り値に含まれる。
 func (cs *CLPAState) CLPA_Partition() (map[string]uint64, int) {
 	// ディレクトリが存在するか確認し、なければ作成する
 	err := os.MkdirAll(params.ExpDataRootDir, os.ModePerm)
@@ -379,6 +380,7 @@ func (cs *CLPAState) CLPA_Partition() (map[string]uint64, int) {
 				}
 			}
 			if vNowShard != max_scoreShard && cs.VertexsNumInShard[vNowShard] > 1 {
+				//fmt.Printf("Addr: %s, vNowShard: %d, max_scoreShard: %d移動しました\n", v.Addr, vNowShard, max_scoreShard)
 				cs.PartitionMap[v] = max_scoreShard
 				res[v.Addr] = uint64(max_scoreShard)
 				updateTreshold[v.Addr]++
@@ -388,6 +390,13 @@ func (cs *CLPAState) CLPA_Partition() (map[string]uint64, int) {
 				// Recalculate Wk
 				cs.changeShardRecompute(v, vNowShard)
 			}
+		}
+	}
+
+	// MergedContractを考慮して、シャードの割り当てを戻り値として含める
+	for v := range cs.NetGraph.VertexSet {
+		if v.IsMerged {
+			res[v.Addr] = uint64(cs.PartitionMap[v])
 		}
 	}
 

@@ -20,22 +20,26 @@ type ProposalPbftInsideExtraHandleMod struct {
 
 // propose request with different types
 func (pphm *ProposalPbftInsideExtraHandleMod) HandleinPropose() (bool, *message.Request) {
-	if pphm.cdm.PartitionOn {
-		pphm.sendPartitionReady()
+	if pphm.cdm.PartitionOn { // handlePartitionMsg()でPartitionOnがtrueになる SupervisorからすべてのリーダにCPartitionMsgを受け取り実行する
+		pphm.pbftNode.pl.Plog.Println("パーティションブロックのProposeを行います。")
+		pphm.sendPartitionReady() // Leader to Other Shard Leaders
 		for !pphm.getPartitionReady() {
 			pphm.pbftNode.pl.Plog.Println("各シャードのPartitionReadyがすべてtrueになるまでgetPartitionReady()で待機します。")
 			time.Sleep(time.Second)
 		}
+		pphm.pbftNode.pl.Plog.Println("各シャードのPartitionReadyがすべてtrueになりました。")
 		// send accounts and txs
-		pphm.sendAccounts_and_Txs()
+		pphm.sendAccounts_and_Txs() // Leader to Other Shard Leaders
 		// propose a partition
 		for !pphm.getCollectOver() {
 			time.Sleep(time.Second)
+			pphm.pbftNode.pl.Plog.Println("各シャードのCollectOverがすべてtrueになるまでgetCollectOver()で待機します。")
 		}
 		return pphm.proposePartition()
 	}
 
 	// ELSE: propose a block
+	pphm.pbftNode.pl.Plog.Println("TXブロックのProposeを行います。")
 	pphm.pbftNode.pl.Plog.Println("TxPool Size Before PackTX: ", len(pphm.pbftNode.CurChain.Txpool.TxQueue))
 	block := pphm.pbftNode.CurChain.GenerateBlock(int32(pphm.pbftNode.NodeID))
 	pphm.pbftNode.pl.Plog.Println("TxPool Size After PackTX: ", len(pphm.pbftNode.CurChain.Txpool.TxQueue))
@@ -83,6 +87,7 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 		// if a partition Requst ...
 		atm := message.DecodeAccountTransferMsg(r.Msg.Content)
 		pphm.accountTransfer_do(atm)
+		pphm.pbftNode.pl.Plog.Printf("accountTransfer_doが完了しました。\n")
 		return true
 	}
 	// if a block request ...
@@ -97,7 +102,7 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 		pphm.pbftNode.pl.Plog.Printf("S%dN%d : main node is trying to send relay txs at height = %d \n", pphm.pbftNode.ShardID, pphm.pbftNode.NodeID, block.Header.Number)
 		// generate relay pool and collect txs excuted
 		pphm.pbftNode.CurChain.Txpool.RelayPool = make(map[uint64][]*core.Transaction)
-		innerShardTxs := make([]*core.Transaction, 0) // interからinnerにtypeミスを修正
+		innerShardTxs := make([]*core.Transaction, 0)
 		relay1Txs := make([]*core.Transaction, 0)
 		relay2Txs := make([]*core.Transaction, 0)
 
@@ -106,14 +111,23 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 			// TODO: Receipientがmergeされているか確認
 			rsid := pphm.pbftNode.CurChain.Get_PartitionMap(tx.Recipient)
 			if !tx.Relayed && ssid != pphm.pbftNode.ShardID {
-				log.Panic("incorrect tx")
+				pphm.pbftNode.pl.Plog.Printf(
+					"[ERROR] Transaction relay status mismatch: expected ShardID=%d, got ssid=%d, rsid=%d. Sender=%s, Recipient=%s, Relayed=%t",
+					pphm.pbftNode.ShardID, ssid, rsid, tx.Sender, tx.Recipient, tx.Relayed,
+				)
+				log.Panic("incorrect tx1: Relayed is false but shard IDs do not match.")
 			}
 			if tx.Relayed && rsid != pphm.pbftNode.ShardID {
-				log.Panic("incorrect tx")
+				pphm.pbftNode.pl.Plog.Printf(
+					"[ERROR] Transaction relay shard ID mismatch: expected ShardID=%d, got ssid=%d, rsid=%d. Sender=%s, Recipient=%s, Relayed=%t",
+					pphm.pbftNode.ShardID, ssid, rsid, tx.Sender, tx.Recipient, tx.Relayed,
+				)
+				log.Panic("incorrect tx2: Relayed is true but recipient shard ID does not match.")
 			}
 			if rsid != pphm.pbftNode.ShardID {
 				relay1Txs = append(relay1Txs, tx)
 				tx.Relayed = true
+				// RelayPoolに追加
 				pphm.pbftNode.CurChain.Txpool.AddRelayTx(tx, rsid)
 			} else {
 				if tx.Relayed {
@@ -128,6 +142,7 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 		if params.RelayWithMerkleProof == 1 {
 			pphm.pbftNode.RelayWithProofSend(block)
 		} else {
+			// RelayPoolを他のシャードに送信して、RelayPoolをクリア
 			pphm.pbftNode.RelayMsgSend()
 		}
 

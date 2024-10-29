@@ -107,7 +107,7 @@ func (bc *BlockChain) GetUpdateStatusTrie(txs []*core.Transaction) common.Hash {
 	for i, tx := range txs {
 		// fmt.Printf("tx %d: %s, %s\n", i, tx.Sender, tx.Recipient)
 		// senderIn := false
-		// リレーTXの場合は、
+		// Relayの場合でshardが違う場合は: まずsenderの残高を引くだけ。1回目
 		if !tx.Relayed && (bc.Get_PartitionMap(tx.Sender) == bc.ChainConfig.ShardID || tx.HasBroker) {
 			// senderIn = true
 			// fmt.Printf("the sender %s is in this shard %d, \n", tx.Sender, bc.ChainConfig.ShardID)
@@ -130,11 +130,14 @@ func (bc *BlockChain) GetUpdateStatusTrie(txs []*core.Transaction) common.Hash {
 				fmt.Printf("the balance is less than the transfer amount\n")
 				continue
 			}
+			// senderの残高を引くだけ
 			s_state.Deduct(tx.Value)
 			st.Update([]byte(tx.Sender), s_state.Encode())
 			cnt++
 		}
 		// recipientIn := false
+		// Relayの場合でshardが違う場合は: bc.Get_PartitionMap(tx.Recipient) == bc.ChainConfig.ShardIDがfalseになるので、残高は増えない
+		// Relayedがtrueの場合はtrueになるので、そこで残高を増やす
 		if bc.Get_PartitionMap(tx.Recipient) == bc.ChainConfig.ShardID || tx.HasBroker {
 			// fmt.Printf("the recipient %s is in this shard %d, \n", tx.Recipient, bc.ChainConfig.ShardID)
 			// recipientIn = true
@@ -259,11 +262,12 @@ func NewBlockChain(cc *params.ChainConfig, db ethdb.Database) (*BlockChain, erro
 	fmt.Println("Generating a new blockchain", db)
 	chainDBfp := params.DatabaseWrite_path + fmt.Sprintf("chainDB/S%d_N%d", cc.ShardID, cc.NodeID)
 	bc := &BlockChain{
-		db:           db,
-		ChainConfig:  cc,
-		Txpool:       core.NewTxPool(),
-		Storage:      storage.NewStorage(chainDBfp, cc),
-		PartitionMap: make(map[string]uint64),
+		db:              db,
+		ChainConfig:     cc,
+		Txpool:          core.NewTxPool(),
+		Storage:         storage.NewStorage(chainDBfp, cc),
+		PartitionMap:    make(map[string]uint64),
+		MergedContracts: make(map[string]partition.Vertex),
 	}
 	curHash, err := bc.Storage.GetNewestBlockHash()
 	if err != nil {

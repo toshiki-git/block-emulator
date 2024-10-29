@@ -189,3 +189,16 @@ func DeleteElementsInList(list []*core.Transaction, elements []*core.Transaction
 	}
 	return list[:-removedCnt]
 }
+
+// ReverseMap はジェネリックを使用して、任意の型のキーと値を持つマップのキーと値を入れ替えます。
+func ReverseMap[K comparable, V comparable](m map[K]V) map[V][]K {
+	// 入れ替え後のマップを作成
+	reversedMap := make(map[V][]K)
+
+	// 元のマップのキーと値をループして、入れ替えた結果を reversedMap に格納
+	for key, value := range m {
+		reversedMap[value] = append(reversedMap[value], key)
+	}
+
+	return reversedMap
+}
