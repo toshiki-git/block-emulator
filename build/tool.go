@@ -3,6 +3,7 @@ package build
 import (
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -15,11 +16,25 @@ func GenerateBatchByIpTable(nodenum, shardnum int) error {
 	os := runtime.GOOS
 	switch os {
 	case "windows":
-		fileNameFormat = "complie_run_IpAddr=%s.bat"
+		fileNameFormat = "complie_run_S=" + strconv.Itoa(shardnum) + "_N=" + strconv.Itoa(nodenum) + "_IpAddr=%s.bat"
 		commandFormat = "start cmd /k go run main.go"
 	default:
-		fileNameFormat = "complie_run_IpAddr=%s.sh"
+		fileNameFormat = "complie_run_S=" + strconv.Itoa(shardnum) + "_N=" + strconv.Itoa(nodenum) + "_IpAddr=%s.sh"
 		commandFormat = "go run main.go"
+	}
+
+	// NOTE: これはipMapを参照してないので127_0_0_1を使ってないとエラーの可能性がある。
+	FilePath := fmt.Sprintf(fileNameFormat, "127_0_0_1")
+
+	// 各シャード用のディレクトリ作成コマンドを追加
+	for i := 0; i < shardnum; i++ {
+		command := fmt.Sprintf("mkdir -p expTest/terminal_log/S%d", i)
+		if err := attachLineToFile(FilePath, command); nil != err {
+			return err
+		}
+	}
+	if err := attachLineToFile(FilePath, ""); nil != err {
+		return err
 	}
 
 	// generate file for each ip
@@ -34,13 +49,17 @@ func GenerateBatchByIpTable(nodenum, shardnum int) error {
 				// attach this command to this file
 				ipAddr := strings.Split(nodeIp, ":")[0]
 				batFilePath := fmt.Sprintf(fileNameFormat, strings.ReplaceAll(ipAddr, ".", "_"))
-				command := fmt.Sprintf(commandFormat+" -n %d -N %d -s %d -S %d\n", j, nodenum, i, shardnum)
+				command := fmt.Sprintf(commandFormat+" -n %d -N %d -s %d -S %d >> expTest/terminal_log/S%d/N%d.log 2>&1 &",
+					j, nodenum, i, shardnum, i, j)
 				if err := attachLineToFile(batFilePath, command); nil != err {
 					return err
 				}
 			} else {
 				return fmt.Errorf("the node (shardID = %d, nodeID = %d) is not existed in the IP Table file", i, j)
 			}
+		}
+		if err := attachLineToFile(FilePath, ""); nil != err {
+			return err
 		}
 	}
 
@@ -49,7 +68,7 @@ func GenerateBatchByIpTable(nodenum, shardnum int) error {
 		if nodeIp, node_exist := supervisorShard[0]; node_exist {
 			ipAddr := strings.Split(nodeIp, ":")[0]
 			batFilePath := fmt.Sprintf(fileNameFormat, strings.ReplaceAll(ipAddr, ".", "_"))
-			supervisor_command := fmt.Sprintf(commandFormat+" -c -N %d -S %d\n", nodenum, shardnum)
+			supervisor_command := fmt.Sprintf(commandFormat+" -c -N %d -S %d >> expTest/terminal_log/supervisor.log 2>&1 &\n", nodenum, shardnum)
 			if err := attachLineToFile(batFilePath, supervisor_command); nil != err {
 				return err
 			}
