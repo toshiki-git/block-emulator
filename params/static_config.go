@@ -19,8 +19,8 @@ type ChainConfig struct {
 var (
 	SupervisorShard  = uint64(2147483647)
 	Init_Balance, _  = new(big.Int).SetString("100000000000000000000000000000000000000000000", 10)
-	IPmap_nodeTable  = make(map[uint64]map[uint64]string) //IPmap_nodeTable[shardID][nodeID] = "IP:Port"
-	CommitteeMethod  = []string{"CLPA_Broker", "CLPA", "Broker", "Relay", "Proposal"}
+	IPmap_nodeTable  = make(map[uint64]map[uint64]string)                                               //IPmap_nodeTable[shardID][nodeID] = "IP:Port"
+	CommitteeMethod  = []string{"CLPA_Broker", "CLPA", "Broker", "Relay", "Proposal", "ProposalBroker"} //TODO: "Proposal"を"Proposalに変更"
 	MeasureBrokerMod = []string{"TPS_Broker", "TCL_Broker", "CrossTxRate_Broker", "TxNumberCount_Broker"}
 	MeasureRelayMod  = []string{"TPS_Relay", "TCL_Relay", "CrossTxRate_Relay", "TxNumberCount_Relay"}
 )

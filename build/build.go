@@ -51,8 +51,10 @@ func BuildSupervisor(nnm, snm uint64) {
 		measureMod = params.MeasureBrokerMod
 	} else if methodID == 1 || methodID == 3 {
 		measureMod = params.MeasureRelayMod
-	} else if methodID == 4 { // Proposal
+	} else if methodID == 4 { // ProposalRelayBase
 		measureMod = params.MeasureRelayMod
+	} else if methodID == 5 { // ProposalBrokerBase
+		measureMod = params.MeasureBrokerMod
 	}
 	measureMod = append(measureMod, "Tx_Details")
 
