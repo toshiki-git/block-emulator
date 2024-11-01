@@ -30,6 +30,15 @@ type CLPAState struct {
 	GraphHash         []byte
 	MergedContracts   map[string]Vertex //key: address, value: mergedVertex
 	ExecutionTime     time.Duration
+	UnionFind         *UnionFind // Union-Find構造体
+}
+
+// 初期化
+func NewUnionFind() *UnionFind {
+	return &UnionFind{
+		Parent: make(map[string]string),
+		Rank:   make(map[string]int),
+	}
 }
 
 func (graph *CLPAState) Hash() []byte {
@@ -77,7 +86,7 @@ func (cs *CLPAState) AddEdge(u, v Vertex) {
 
 // My Code
 // Contract to Contractの時のみ呼び出される
-func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
+/* func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 	mergedU, isMergedU := cs.MergedContracts[u.Addr]
 	mergedV, isMergedV := cs.MergedContracts[v.Addr]
 
@@ -141,7 +150,7 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 		cs.NetGraph.UpdateGraphForMerge(mergedU, mergedV, mergedVertex)
 
 		// Update MergedContracts to point to the new merged vertex
-		// 全部移動させる
+		// 全部移動させるこの処理かなり重い
 		for key, value := range cs.MergedContracts {
 			if value == mergedU || value == mergedV {
 				cs.MergedContracts[key] = mergedVertex
@@ -156,6 +165,35 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 		log.Panic("Invalid merge case")
 	}
 	return mergedVertex
+} */
+
+func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
+	rootU := cs.UnionFind.Find(u.Addr)
+	rootV := cs.UnionFind.Find(v.Addr)
+
+	// 既に同じグループに属している場合はスキップ
+	if rootU == rootV {
+		return Vertex{}
+	}
+
+	// Union-Find構造で統合
+	parentAddr := cs.UnionFind.Union(u.Addr, v.Addr)
+	parentVertex := Vertex{Addr: parentAddr, IsMerged: true}
+
+	// EdgeSetを更新
+	var vertexToDelete Vertex
+	if parentAddr == u.Addr {
+		vertexToDelete = v
+	} else if parentAddr == v.Addr {
+		vertexToDelete = u
+	} else {
+		log.Panic("Invalid parent address")
+	}
+
+	cs.NetGraph.UpdateGraphForPartialMerge(vertexToDelete, parentVertex)
+	delete(cs.PartitionMap, u)
+
+	return parentVertex
 }
 
 // Copy CLPA state
@@ -264,6 +302,7 @@ func (cs *CLPAState) Init_CLPAState(wp float64, mIter, sn int) {
 	cs.VertexsNumInShard = make([]int, cs.ShardNum)
 	cs.PartitionMap = make(map[Vertex]int)
 	cs.MergedContracts = make(map[string]Vertex)
+	cs.UnionFind = NewUnionFind()
 }
 
 // Initialize partition, using the last digits of the node address, ensuring no empty shards at initialization
@@ -404,10 +443,6 @@ func (cs *CLPAState) CLPA_Partition() (map[string]uint64, int) {
 
 	executionTime := endTime.Sub(startTime) // 実行時間を計算
 	cs.ExecutionTime = executionTime
-
-	/* 	for sid, n := range cs.VertexsNumInShard {
-		fmt.Printf("%d has vertexs: %d\n", sid, n)
-	} */
 
 	cs.ComputeEdges2Shard()
 	afterCrossShardEdgeNum := cs.CrossShardEdgeNum

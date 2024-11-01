@@ -18,7 +18,6 @@ import (
 	"log"
 	"math/big"
 	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,14 +31,16 @@ type ProposalCommitteeModule struct {
 	batchDataNum      int
 
 	// additional variants
-	curEpoch            int32
-	clpaLock            sync.Mutex
-	ClpaGraph           *partition.CLPAState
-	ClpaTest            *measure.TestModule_CLPA
-	modifiedMap         map[string]uint64 // key: address, value: shardID
-	clpaLastRunningTime time.Time
-	clpaFreq            int
-	MergedContracts     map[string]partition.Vertex
+	curEpoch                int32
+	clpaLock                sync.Mutex
+	ClpaGraph               *partition.CLPAState
+	ClpaTest                *measure.TestModule_CLPA
+	modifiedMap             map[string]uint64 // key: address, value: shardID
+	clpaLastRunningTime     time.Time
+	clpaFreq                int
+	MergedContracts         map[string]partition.Vertex
+	ReversedMergedContracts map[partition.Vertex][]string
+	UnionFind               *partition.UnionFind // Union-Find構造体
 
 	// logger module
 	sl *supervisor_log.SupervisorLog
@@ -69,6 +70,7 @@ func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *s
 		clpaFreq:            clpaFrequency,
 		clpaLastRunningTime: time.Time{},
 		MergedContracts:     make(map[string]partition.Vertex),
+		UnionFind:           partition.NewUnionFind(),
 		IpNodeTable:         Ip_nodeTable,
 		Ss:                  Ss,
 		sl:                  sl,
@@ -76,7 +78,7 @@ func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *s
 		internalTxMap:       make(map[string][]*core.InternalTransaction),
 	}
 
-	pcm.internalTxMap = pcm.LoadInternalTxsFromCSV()
+	pcm.internalTxMap = LoadInternalTxsFromCSV(pcm.internalTxCsvPath)
 	pcm.sl.Slog.Println("Internal transactionsの読み込みが完了しました。")
 
 	return pcm
@@ -129,6 +131,7 @@ func (pcm *ProposalCommitteeModule) txSending(txlist []*core.Transaction) {
 		sendersid := pcm.fetchModifiedMap(tx.Sender)
 		sendToShard[sendersid] = append(sendToShard[sendersid], tx)
 	}
+	pcm.sl.Slog.Println(len(txlist), "txs have been sent.")
 }
 
 // 2者間の送金のTXだけではなく、スマートコントラクトTXも生成
@@ -208,7 +211,7 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 			}
 
 			pcm.txSending(txlist)
-			pcm.sl.Slog.Println(len(txlist), "txs have been sent. ")
+
 			// reset the variants about tx sending
 			txlist = make([]*core.Transaction, 0)
 			pcm.Ss.StopGap_Reset()
@@ -239,6 +242,8 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 
 			// マージされたコントラクトのマップがResetされないように. 更新してからclpaMapSendする
 			pcm.MergedContracts = pcm.ClpaGraph.MergedContracts
+			pcm.ReversedMergedContracts = pbft_all.ReverseMap(pcm.MergedContracts)
+			pcm.UnionFind = pcm.ClpaGraph.UnionFind
 
 			pcm.clpaMapSend(mmap)
 			for key, val := range mmap {
@@ -304,6 +309,8 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 
 			// マージされたコントラクトのマップがResetされないように
 			pcm.MergedContracts = pcm.ClpaGraph.MergedContracts
+			pcm.ReversedMergedContracts = pbft_all.ReverseMap(pcm.MergedContracts)
+			pcm.UnionFind = pcm.ClpaGraph.UnionFind
 
 			pcm.clpaMapSend(mmap)
 			for key, val := range mmap {
@@ -392,9 +399,11 @@ func (pcm *ProposalCommitteeModule) clpaReset() {
 	}
 	// MergedContractsがResetされないように
 	pcm.ClpaGraph.MergedContracts = pcm.MergedContracts
+	pcm.ClpaGraph.UnionFind = pcm.UnionFind
 }
 
 func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
+	start := time.Now()
 	pcm.sl.Slog.Printf("Supervisor: received from shard %d in epoch %d.\n", b.SenderShardID, b.Epoch)
 	if atomic.CompareAndSwapInt32(&pcm.curEpoch, int32(b.Epoch-1), int32(b.Epoch)) {
 		pcm.sl.Slog.Println("this curEpoch is updated", b.Epoch)
@@ -410,6 +419,11 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	pcm.sl.Slog.Printf("グラフを更新開始 InnerShardTxs: %d txs, Relay2Txs: %d txs", len(b.InnerShardTxs), len(b.Relay2Txs))
 	pcm.processTransactions(b.InnerShardTxs)
 	pcm.processTransactions(b.Relay2Txs)
+
+	// pcm.ClpaGraph.MergedContracts = pcm.ClpaGraph.UnionFind.GetParentMap()
+
+	duration := time.Since(start)
+	pcm.sl.Slog.Printf("BlockInfoMsg()の実行時間は %v.\n", duration)
 }
 
 func (pcm *ProposalCommitteeModule) processTransactions(txs []*core.Transaction) {
@@ -442,6 +456,9 @@ func (pcm *ProposalCommitteeModule) processInternalTx(itx *core.InternalTransact
 	// 両方がコントラクトの場合はマージ操作を実行
 	if itx.SenderIsContract && itx.RecipientIsContract {
 		// ATTENTION: MergeContractsの引数は、partition.Vertex{Addr: itx.Sender}これを使う
+		/* if len(pcm.ReversedMergedContracts[itxSender]) < 100 || len(pcm.ReversedMergedContracts[itxRecipient]) < 100 {
+			pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
+		} */
 		pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 	}
 }
@@ -459,89 +476,4 @@ func (pcm *ProposalCommitteeModule) shouldSkipInternalTx(itx *core.InternalTrans
 	mergedU, isMergedU := pcm.ClpaGraph.MergedContracts[itx.Recipient]
 	mergedV, isMergedV := pcm.ClpaGraph.MergedContracts[itx.Sender]
 	return isMergedU && isMergedV && mergedU == mergedV
-}
-
-func (pcm *ProposalCommitteeModule) LoadInternalTxsFromCSV() map[string][]*core.InternalTransaction {
-	file, err := os.Open(pcm.internalTxCsvPath)
-	if err != nil {
-		log.Panic(err)
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	internalTxMap := make(map[string][]*core.InternalTransaction) // parentTxHash -> []*InternalTransaction
-
-	for {
-		data, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Panic(err)
-		}
-
-		// バリデーション：行が9列以上あるか確認
-		if len(data) < 9 {
-			log.Printf("Skipping row due to insufficient columns: %v", data)
-			continue
-		}
-
-		// バリデーション：parentTxHashが空でないか確認
-		parentTxHash := data[2]
-		if parentTxHash == "" {
-			log.Printf("Skipping row due to empty parentTxHash: %v", data)
-			continue
-		}
-
-		// バリデーション：typeTraceAddressが空でないか確認
-		typeTraceAddress := getTraceType(data[3])
-		if typeTraceAddress == "" {
-			log.Printf("Skipping row due to empty typeTraceAddress: %v", data)
-			continue
-		}
-
-		// バリデーション：senderとrecipientが正しい形式であるか確認
-		sender := data[4]
-		recipient := data[5]
-		if len(sender) < 40 || len(recipient) < 40 {
-			log.Printf("Skipping row due to invalid sender or recipient: %v", data)
-			continue
-		}
-
-		// バリデーション：senderIsContract, recipientIsContractが1または0であるか確認
-		senderIsContract := data[6] == "1"
-		recipientIsContract := data[7] == "1"
-		if data[6] != "1" && data[6] != "0" {
-			log.Printf("Skipping row due to invalid senderIsContract: %v", data)
-			continue
-		}
-		if data[7] != "1" && data[7] != "0" {
-			log.Printf("Skipping row due to invalid recipientIsContract: %v", data)
-			continue
-		}
-
-		// バリデーション：valueが正しい整数としてパースできるか確認
-		valueStr := data[8]
-		value, ok := new(big.Int).SetString(valueStr, 10)
-		if !ok {
-			log.Printf("Skipping row due to invalid value: %v", data)
-			continue
-		}
-
-		// nonceを初期化
-		nonce := uint64(0)
-
-		// 内部トランザクションを作成
-		internalTx := core.NewInternalTransaction(sender[2:], recipient[2:], parentTxHash, typeTraceAddress, value, nonce, time.Now(), senderIsContract, recipientIsContract)
-
-		// 内部トランザクションのリストを、元のトランザクションハッシュでマップに関連付ける
-		internalTxMap[parentTxHash] = append(internalTxMap[parentTxHash], internalTx)
-	}
-	return internalTxMap
-}
-
-func getTraceType(input string) string {
-	// "_"で分割して最初の要素を返す
-	parts := strings.Split(input, "_")
-	return parts[0]
 }
