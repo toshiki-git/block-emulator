@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -24,15 +25,16 @@ import (
 
 // CLPA committee operations
 type ProposalBrokerCommitteeModule struct {
-	csvPath      string
-	dataTotalNum int
-	nowDataNum   int
-	batchDataNum int
+	csvPath           string
+	internalTxCsvPath string
+	dataTotalNum      int
+	nowDataNum        int
+	batchDataNum      int
 
 	// additional variants
 	curEpoch            int32
 	clpaLock            sync.Mutex
-	clpaGraph           *partition.CLPAState
+	ClpaGraph           *partition.CLPAState
 	modifiedMap         map[string]uint64
 	clpaLastRunningTime time.Time
 	clpaFreq            int
@@ -50,21 +52,25 @@ type ProposalBrokerCommitteeModule struct {
 	// control components
 	Ss          *signal.StopSignal // to control the stop message sending
 	IpNodeTable map[uint64]map[uint64]string
+
+	// smart contract internal transaction
+	internalTxMap map[string][]*core.InternalTransaction
 }
 
-func NewProposalBrokerCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *signal.StopSignal, sl *supervisor_log.SupervisorLog, csvFilePath string, dataNum, batchNum, clpaFrequency int) *ProposalBrokerCommitteeModule {
+func NewProposalBrokerCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *signal.StopSignal, sl *supervisor_log.SupervisorLog, csvFilePath, internalTxCsvPath string, dataNum, batchNum, clpaFrequency int) *ProposalBrokerCommitteeModule {
 	cg := new(partition.CLPAState)
 	cg.Init_CLPAState(0.5, 100, params.ShardNum)
 
 	broker := new(broker.Broker)
 	broker.NewBroker(nil)
 
-	return &ProposalBrokerCommitteeModule{
+	pbcm := &ProposalBrokerCommitteeModule{
 		csvPath:             csvFilePath,
+		internalTxCsvPath:   internalTxCsvPath,
 		dataTotalNum:        dataNum,
 		batchDataNum:        batchNum,
 		nowDataNum:          0,
-		clpaGraph:           cg,
+		ClpaGraph:           cg,
 		modifiedMap:         make(map[string]uint64),
 		clpaFreq:            clpaFrequency,
 		clpaLastRunningTime: time.Time{},
@@ -76,7 +82,13 @@ func NewProposalBrokerCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string,
 		Ss:                  Ss,
 		sl:                  sl,
 		curEpoch:            0,
+		internalTxMap:       make(map[string][]*core.InternalTransaction),
 	}
+
+	pbcm.internalTxMap = LoadInternalTxsFromCSV(pbcm.internalTxCsvPath)
+	pbcm.sl.Slog.Println("Internal transactionsの読み込みが完了しました。")
+
+	return pbcm
 }
 
 // for CLPA_Broker committee, it only handle the extra CInner2CrossTx message.
@@ -139,6 +151,52 @@ func (pbcm *ProposalBrokerCommitteeModule) txSending(txlist []*core.Transaction)
 		pbcm.clpaLock.Unlock()
 		sendToShard[sendersid] = append(sendToShard[sendersid], tx)
 	}
+	pbcm.sl.Slog.Println(len(txlist), "txs have been sent.")
+}
+
+// 2者間の送金のTXだけではなく、スマートコントラクトTXも生成
+func (pbcm *ProposalBrokerCommitteeModule) data2txWithContract(data []string, nonce uint64) (*core.Transaction, bool) {
+	// data[2]: txHash
+	// data[3]: from e.g. 0x1234567890abcdef1234567890abcdef12345678
+	// data[4]: to e.g. 0x1234567890abcdef1234567890abcdef12345678
+	// data[6]: fromIsContract (0: not contract, 1: contract)
+	// data[7]: toIsContract (0: not contract, 1: contract)
+	// data[8]: value e.g. 1000000000000000000
+
+	// データの各要素を変数に格納
+	txHash := data[2]
+	from := data[3]
+	to := data[4]
+	fromIsContract := data[6] == "1"
+	toIsContract := data[7] == "1"
+	valueStr := data[8]
+
+	// TX for money transfer between two parties
+	if !fromIsContract && !toIsContract && len(from) > 16 && len(to) > 16 && from != to {
+		val, ok := new(big.Int).SetString(valueStr, 10)
+		if !ok {
+			log.Panic("Failed to parse value")
+		}
+		tx := core.NewTransaction(from[2:], to[2:], val, nonce, time.Now())
+		return tx, true
+	}
+
+	// TX for smart contract
+	if toIsContract && len(from) > 16 && len(to) > 16 && from != to {
+		val, ok := new(big.Int).SetString(valueStr, 10)
+		if !ok {
+			log.Panic("Failed to parse value")
+		}
+		tx := core.NewTransaction(from[2:], to[2:], val, nonce, time.Now())
+		// add internal transactions
+		tx.RecipientIsContract = true
+		if internalTxs, ok := pbcm.internalTxMap[txHash]; ok {
+			tx.InternalTxs = internalTxs
+		}
+		return tx, true
+	}
+
+	return &core.Transaction{}, false
 }
 
 func (pbcm *ProposalBrokerCommitteeModule) MsgSendingControl() {
@@ -159,7 +217,7 @@ func (pbcm *ProposalBrokerCommitteeModule) MsgSendingControl() {
 		if err != nil {
 			log.Panic(err)
 		}
-		if tx, ok := data2tx(data, uint64(pbcm.nowDataNum)); ok {
+		if tx, ok := pbcm.data2txWithContract(data, uint64(pbcm.nowDataNum)); ok {
 			txlist = append(txlist, tx)
 			pbcm.nowDataNum++
 		} else {
@@ -173,7 +231,7 @@ func (pbcm *ProposalBrokerCommitteeModule) MsgSendingControl() {
 				pbcm.clpaLastRunningTime = time.Now()
 			}
 
-			itx := pbcm.dealTxByBroker(txlist)
+			itx := pbcm.dealTxByBroker(txlist) // ctxのSendingが行われる
 
 			pbcm.txSending(itx)
 
@@ -185,7 +243,7 @@ func (pbcm *ProposalBrokerCommitteeModule) MsgSendingControl() {
 		if params.ShardNum > 1 && !pbcm.clpaLastRunningTime.IsZero() && time.Since(pbcm.clpaLastRunningTime) >= time.Duration(pbcm.clpaFreq)*time.Second {
 			pbcm.clpaLock.Lock()
 			clpaCnt++
-			mmap, _ := pbcm.clpaGraph.CLPA_Partition()
+			mmap, _ := pbcm.ClpaGraph.CLPA_Partition()
 
 			pbcm.clpaMapSend(mmap)
 			for key, val := range mmap {
@@ -212,7 +270,7 @@ func (pbcm *ProposalBrokerCommitteeModule) MsgSendingControl() {
 		if time.Since(pbcm.clpaLastRunningTime) >= time.Duration(pbcm.clpaFreq)*time.Second {
 			pbcm.clpaLock.Lock()
 			clpaCnt++
-			mmap, _ := pbcm.clpaGraph.CLPA_Partition()
+			mmap, _ := pbcm.ClpaGraph.CLPA_Partition()
 
 			pbcm.clpaMapSend(mmap)
 			for key, val := range mmap {
@@ -248,15 +306,16 @@ func (pbcm *ProposalBrokerCommitteeModule) clpaMapSend(m map[string]uint64) {
 }
 
 func (pbcm *ProposalBrokerCommitteeModule) clpaReset() {
-	pbcm.clpaGraph = new(partition.CLPAState)
-	pbcm.clpaGraph.Init_CLPAState(0.5, 100, params.ShardNum)
+	pbcm.ClpaGraph = new(partition.CLPAState)
+	pbcm.ClpaGraph.Init_CLPAState(0.5, 100, params.ShardNum)
 	for key, val := range pbcm.modifiedMap {
-		pbcm.clpaGraph.PartitionMap[partition.Vertex{Addr: key}] = int(val)
+		pbcm.ClpaGraph.PartitionMap[partition.Vertex{Addr: key}] = int(val)
 	}
 }
 
 // handle block information when received CBlockInfo message(pbft node commited)pbftノードがコミットしたとき
 func (pbcm *ProposalBrokerCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
+	start := time.Now()
 	pbcm.sl.Slog.Printf("received from shard %d in epoch %d.\n", b.SenderShardID, b.Epoch)
 	if atomic.CompareAndSwapInt32(&pbcm.curEpoch, int32(b.Epoch-1), int32(b.Epoch)) {
 		pbcm.sl.Slog.Println("this curEpoch is updated", b.Epoch)
@@ -272,16 +331,92 @@ func (pbcm *ProposalBrokerCommitteeModule) HandleBlockInfo(b *message.BlockInfoM
 	pbcm.createConfirm(txs)
 
 	pbcm.clpaLock.Lock()
-	for _, tx := range b.InnerShardTxs {
+	/* 	for _, tx := range b.InnerShardTxs {
+	   		if tx.HasBroker {
+	   			continue
+	   		}
+	   		pbcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, partition.Vertex{Addr: tx.Recipient})
+	   	}
+	   	for _, b1tx := range b.Broker1Txs {
+	   		pbcm.ClpaGraph.AddEdge(partition.Vertex{Addr: b1tx.OriginalSender}, partition.Vertex{Addr: b1tx.FinalRecipient})
+	   	} */
+
+	pbcm.processTransactions(b.InnerShardTxs)
+	for _, b1tx := range b.Broker1Txs {
+		if mergedVertex, ok := pbcm.ClpaGraph.MergedContracts[b1tx.FinalRecipient]; ok {
+			pbcm.ClpaGraph.AddEdge(partition.Vertex{Addr: b1tx.OriginalSender}, mergedVertex)
+		} else {
+			pbcm.ClpaGraph.AddEdge(partition.Vertex{Addr: b1tx.OriginalSender}, partition.Vertex{Addr: b1tx.FinalRecipient})
+		}
+
+		// 内部トランザクションを処理
+		for _, itx := range b1tx.InternalTxs {
+			if pbcm.shouldSkipInternalTx(itx) {
+				// Edgeを追加しない
+				continue
+			}
+			pbcm.processInternalTx(itx)
+		}
+	}
+
+	pbcm.clpaLock.Unlock()
+	duration := time.Since(start)
+	pbcm.sl.Slog.Printf("BlockInfoMsg()の実行時間は %v.\n", duration)
+}
+
+func (pbcm *ProposalBrokerCommitteeModule) processTransactions(txs []*core.Transaction) {
+	for _, tx := range txs {
 		if tx.HasBroker {
 			continue
 		}
-		pbcm.clpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, partition.Vertex{Addr: tx.Recipient})
+		if mergedVertex, ok := pbcm.ClpaGraph.MergedContracts[tx.Recipient]; ok {
+			pbcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, mergedVertex)
+		} else {
+			pbcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, partition.Vertex{Addr: tx.Recipient})
+		}
+
+		// 内部トランザクションを処理
+		for _, itx := range tx.InternalTxs {
+			if pbcm.shouldSkipInternalTx(itx) {
+				// Edgeを追加しない
+				continue
+			}
+			pbcm.processInternalTx(itx)
+		}
 	}
-	for _, b1tx := range b.Broker1Txs {
-		pbcm.clpaGraph.AddEdge(partition.Vertex{Addr: b1tx.OriginalSender}, partition.Vertex{Addr: b1tx.FinalRecipient})
+}
+
+// 内部トランザクション処理
+func (pbcm *ProposalBrokerCommitteeModule) processInternalTx(itx *core.InternalTransaction) {
+	itxSender := pbcm.getMergedVertex(itx.Sender)
+	itxRecipient := pbcm.getMergedVertex(itx.Recipient)
+
+	// マージされた送信者と受信者を使ってエッジを追加
+	pbcm.ClpaGraph.AddEdge(itxSender, itxRecipient)
+
+	// 両方がコントラクトの場合はマージ操作を実行
+	if itx.SenderIsContract && itx.RecipientIsContract {
+		// ATTENTION: MergeContractsの引数は、partition.Vertex{Addr: itx.Sender}これを使う
+		/* if len(pbcm.ReversedMergedContracts[itxSender]) < 100 || len(pbcm.ReversedMergedContracts[itxRecipient]) < 100 {
+			pbcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
+		} */
+		pbcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 	}
-	pbcm.clpaLock.Unlock()
+}
+
+// マージされた頂点を取得
+func (pbcm *ProposalBrokerCommitteeModule) getMergedVertex(addr string) partition.Vertex {
+	if mergedVertex, ok := pbcm.ClpaGraph.MergedContracts[addr]; ok {
+		return mergedVertex
+	}
+	return partition.Vertex{Addr: addr}
+}
+
+// 内部トランザクションをスキップするかどうかの判定
+func (pbcm *ProposalBrokerCommitteeModule) shouldSkipInternalTx(itx *core.InternalTransaction) bool {
+	mergedU, isMergedU := pbcm.ClpaGraph.MergedContracts[itx.Recipient]
+	mergedV, isMergedV := pbcm.ClpaGraph.MergedContracts[itx.Sender]
+	return isMergedU && isMergedV && mergedU == mergedV
 }
 
 func (pbcm *ProposalBrokerCommitteeModule) createConfirm(txs []*core.Transaction) {

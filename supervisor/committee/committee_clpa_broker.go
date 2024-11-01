@@ -139,6 +139,7 @@ func (ccm *CLPACommitteeMod_Broker) txSending(txlist []*core.Transaction) {
 		ccm.clpaLock.Unlock()
 		sendToShard[sendersid] = append(sendToShard[sendersid], tx)
 	}
+	ccm.sl.Slog.Println(len(txlist), "txs have been sent.")
 }
 
 func (ccm *CLPACommitteeMod_Broker) MsgSendingControl() {

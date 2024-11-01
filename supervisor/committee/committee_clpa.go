@@ -101,6 +101,7 @@ func (ccm *CLPACommitteeModule) txSending(txlist []*core.Transaction) {
 		sendersid := ccm.fetchModifiedMap(tx.Sender)
 		sendToShard[sendersid] = append(sendToShard[sendersid], tx)
 	}
+	ccm.sl.Slog.Println(len(txlist), "txs have been sent.")
 }
 
 func (ccm *CLPACommitteeModule) MsgSendingControl() {

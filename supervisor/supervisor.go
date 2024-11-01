@@ -65,7 +65,7 @@ func (d *Supervisor) NewSupervisor(ip string, pcc *params.ChainConfig, committee
 	case "Proposal":
 		d.comMod = committee.NewProposalCommitteeModule(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.InternalTxFile, params.TotalDataSize, params.TxBatchSize, params.ReconfigTimeGap, measure.NewTestModule_CLPA())
 	case "ProposalBroker":
-		d.comMod = committee.NewProposalBrokerCommitteeModule(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.TotalDataSize, params.TxBatchSize, params.ReconfigTimeGap)
+		d.comMod = committee.NewProposalBrokerCommitteeModule(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.InternalTxFile, params.TotalDataSize, params.TxBatchSize, params.ReconfigTimeGap)
 	default:
 		d.comMod = committee.NewRelayCommitteeModule(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.TotalDataSize, params.TxBatchSize)
 	}

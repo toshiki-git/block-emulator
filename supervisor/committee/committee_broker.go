@@ -103,6 +103,7 @@ func (bcm *BrokerCommitteeMod) txSending(txlist []*core.Transaction) {
 		}
 		sendToShard[sendersid] = append(sendToShard[sendersid], tx)
 	}
+	bcm.sl.Slog.Println(len(txlist), "txs have been sent.")
 }
 
 func (bcm *BrokerCommitteeMod) MsgSendingControl() {

@@ -84,6 +84,7 @@ func (rthm *RelayCommitteeModule) txSending(txlist []*core.Transaction) {
 		sendersid := uint64(utils.Addr2Shard(tx.Sender))
 		sendToShard[sendersid] = append(sendToShard[sendersid], tx)
 	}
+	rthm.sl.Slog.Println(len(txlist), "txs have been sent.")
 }
 
 // read transactions, the Number of the transactions is - batchDataNum

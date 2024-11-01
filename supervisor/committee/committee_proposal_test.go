@@ -40,7 +40,7 @@ func TestLoadInternalTxsFromCSV(t *testing.T) {
 	}
 
 	// テスト対象の関数を呼び出し
-	internalTxMap := pcm.LoadInternalTxsFromCSV()
+	internalTxMap := LoadInternalTxsFromCSV(pcm.internalTxCsvPath)
 
 	// テストの検証（例として2つのトランザクションをチェック）
 	// ここでは仮に存在する親トランザクションハッシュ "0x123" を検証しています。
