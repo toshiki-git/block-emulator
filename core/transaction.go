@@ -26,7 +26,7 @@ type Transaction struct {
 	// used in transaction relaying
 	Relayed bool
 	// used in broker, if the tx is not a broker1 or broker2 tx, these values should be empty.
-	HasBroker      bool
+	HasBroker      bool // Recepient or Sender is a broker
 	SenderIsBroker bool
 	OriginalSender utils.Address
 	FinalRecipient utils.Address
