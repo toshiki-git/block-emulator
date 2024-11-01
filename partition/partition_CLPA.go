@@ -165,11 +165,14 @@ func (cs *CLPAState) AddEdge(u, v Vertex) {
 		log.Panic("Invalid merge case")
 	}
 	return mergedVertex
-} */
-
+}
+*/
 func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 	rootU := cs.UnionFind.Find(u.Addr)
 	rootV := cs.UnionFind.Find(v.Addr)
+
+	fmt.Println("rootU: ", rootU)
+	fmt.Println("rootV: ", rootV)
 
 	// 既に同じグループに属している場合はスキップ
 	if rootU == rootV {
@@ -177,21 +180,24 @@ func (cs *CLPAState) MergeContracts(u, v Vertex) Vertex {
 	}
 
 	// Union-Find構造で統合
-	parentAddr := cs.UnionFind.Union(u.Addr, v.Addr)
-	parentVertex := Vertex{Addr: parentAddr, IsMerged: true}
+	parentAddr := cs.UnionFind.Union(rootU, rootV)
+	fmt.Println("parentAddr: ", parentAddr)
+	parentVertex := Vertex{Addr: parentAddr}
 
 	// EdgeSetを更新
 	var vertexToDelete Vertex
-	if parentAddr == u.Addr {
+	if parentAddr == rootU {
 		vertexToDelete = v
-	} else if parentAddr == v.Addr {
+		fmt.Println("Compare Result: ", u.Addr)
+	} else if parentAddr == rootV {
 		vertexToDelete = u
+		fmt.Println("Compare Result: ", u.Addr)
 	} else {
 		log.Panic("Invalid parent address")
 	}
 
 	cs.NetGraph.UpdateGraphForPartialMerge(vertexToDelete, parentVertex)
-	delete(cs.PartitionMap, u)
+	delete(cs.PartitionMap, vertexToDelete)
 
 	return parentVertex
 }
@@ -434,7 +440,7 @@ func (cs *CLPAState) CLPA_Partition() (map[string]uint64, int) {
 
 	// MergedContractを考慮して、シャードの割り当てを戻り値として含める
 	for v := range cs.NetGraph.VertexSet {
-		if v.IsMerged {
+		if IsUnioned := cs.UnionFind.HasBeenUnioned(v.Addr); IsUnioned {
 			res[v.Addr] = uint64(cs.PartitionMap[v])
 		}
 	}
