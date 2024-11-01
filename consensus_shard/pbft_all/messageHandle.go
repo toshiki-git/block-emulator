@@ -24,6 +24,7 @@ func (p *PbftConsensusNode) Propose() {
 			time.Sleep(time.Duration(int64(p.pbftChainConfig.BlockInterval)) * time.Millisecond)
 			// send a signal to another GO-Routine. It will block until a GO-Routine try to fetch data from this channel.
 			for p.pbftStage.Load() != 1 {
+				p.pl.Plog.Println("pbftStage=1でないので1秒待機します。nextRoundBeginSignal <- trueになるまで待機します")
 				time.Sleep(time.Millisecond * 100)
 			}
 			nextRoundBeginSignal <- true
