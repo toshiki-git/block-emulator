@@ -64,7 +64,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 	cphm.pbftNode.pl.Plog.Println("sendAccounts_and_Txs(): lastMapidは", lastMapid)
 	for key, val := range cphm.cdm.ModifiedMap[lastMapid] { //key is the address, val is the shardID
 		// ModifiedMapがすべてのアカウントを含んでないので、そこでエラーになる可能性がある
-		if addrs, ok := cphm.cdm.ReversedMergedContracts[lastMapid][partition.Vertex{Addr: key, IsMerged: true}]; ok {
+		if addrs, ok := cphm.cdm.ReversedMergedContracts[lastMapid][partition.Vertex{Addr: key}]; ok {
 			// mergedVertexはaccountToFetchに含めない
 			for _, addr := range addrs {
 				if cphm.pbftNode.CurChain.Get_PartitionMap(addr) != val {
