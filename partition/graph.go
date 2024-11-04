@@ -4,7 +4,6 @@ package partition
 type Vertex struct {
 	Addr string // Account address
 	// Additional attributes to be added
-	IsMerged bool
 }
 
 // Graph representing the current set of blockchain transactions
@@ -21,7 +20,6 @@ func (v *Vertex) ConstructVertex(s string) {
 
 func (v *Vertex) ConstructMergedVertex() {
 	v.Addr = "hogehoge" //適切な名前を付ける
-	v.IsMerged = true
 }
 
 // Add a node to the graph

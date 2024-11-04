@@ -45,6 +45,7 @@ type ProposalBrokerCommitteeModule struct {
 	brokerConfirm2Pool map[string]*message.Mag2Confirm
 	brokerTxPool       []*core.Transaction
 	brokerModuleLock   sync.Mutex
+	UnionFind          *partition.UnionFind // Union-Find構造体
 
 	// logger module
 	sl *supervisor_log.SupervisorLog
@@ -74,6 +75,7 @@ func NewProposalBrokerCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string,
 		modifiedMap:         make(map[string]uint64),
 		clpaFreq:            clpaFrequency,
 		clpaLastRunningTime: time.Time{},
+		UnionFind:           partition.NewUnionFind(),
 		brokerConfirm1Pool:  make(map[string]*message.Mag1Confirm),
 		brokerConfirm2Pool:  make(map[string]*message.Mag2Confirm),
 		brokerTxPool:        make([]*core.Transaction, 0),
@@ -343,15 +345,14 @@ func (pbcm *ProposalBrokerCommitteeModule) HandleBlockInfo(b *message.BlockInfoM
 
 	pbcm.processTransactions(b.InnerShardTxs)
 	for _, b1tx := range b.Broker1Txs {
-		if mergedVertex, ok := pbcm.ClpaGraph.MergedContracts[b1tx.FinalRecipient]; ok {
-			pbcm.ClpaGraph.AddEdge(partition.Vertex{Addr: b1tx.OriginalSender}, mergedVertex)
-		} else {
-			pbcm.ClpaGraph.AddEdge(partition.Vertex{Addr: b1tx.OriginalSender}, partition.Vertex{Addr: b1tx.FinalRecipient})
-		}
+		recepient := partition.Vertex{Addr: pbcm.ClpaGraph.UnionFind.Find(b1tx.Recipient)}
+		sender := partition.Vertex{Addr: pbcm.ClpaGraph.UnionFind.Find(b1tx.Sender)}
+
+		pbcm.ClpaGraph.AddEdge(sender, recepient)
 
 		// 内部トランザクションを処理
 		for _, itx := range b1tx.InternalTxs {
-			if pbcm.shouldSkipInternalTx(itx) {
+			if pbcm.UnionFind.IsConnected(itx.Sender, itx.Recipient) {
 				// Edgeを追加しない
 				continue
 			}
@@ -369,15 +370,14 @@ func (pbcm *ProposalBrokerCommitteeModule) processTransactions(txs []*core.Trans
 		if tx.HasBroker {
 			continue
 		}
-		if mergedVertex, ok := pbcm.ClpaGraph.MergedContracts[tx.Recipient]; ok {
-			pbcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, mergedVertex)
-		} else {
-			pbcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, partition.Vertex{Addr: tx.Recipient})
-		}
 
+		recepient := partition.Vertex{Addr: pbcm.ClpaGraph.UnionFind.Find(tx.Recipient)}
+		sender := partition.Vertex{Addr: pbcm.ClpaGraph.UnionFind.Find(tx.Sender)}
+
+		pbcm.ClpaGraph.AddEdge(sender, recepient)
 		// 内部トランザクションを処理
 		for _, itx := range tx.InternalTxs {
-			if pbcm.shouldSkipInternalTx(itx) {
+			if pbcm.UnionFind.IsConnected(itx.Sender, itx.Recipient) {
 				// Edgeを追加しない
 				continue
 			}
@@ -388,8 +388,8 @@ func (pbcm *ProposalBrokerCommitteeModule) processTransactions(txs []*core.Trans
 
 // 内部トランザクション処理
 func (pbcm *ProposalBrokerCommitteeModule) processInternalTx(itx *core.InternalTransaction) {
-	itxSender := pbcm.getMergedVertex(itx.Sender)
-	itxRecipient := pbcm.getMergedVertex(itx.Recipient)
+	itxSender := partition.Vertex{Addr: pbcm.ClpaGraph.UnionFind.Find(itx.Sender)}
+	itxRecipient := partition.Vertex{Addr: pbcm.ClpaGraph.UnionFind.Find(itx.Recipient)}
 
 	// マージされた送信者と受信者を使ってエッジを追加
 	pbcm.ClpaGraph.AddEdge(itxSender, itxRecipient)
@@ -397,26 +397,8 @@ func (pbcm *ProposalBrokerCommitteeModule) processInternalTx(itx *core.InternalT
 	// 両方がコントラクトの場合はマージ操作を実行
 	if itx.SenderIsContract && itx.RecipientIsContract {
 		// ATTENTION: MergeContractsの引数は、partition.Vertex{Addr: itx.Sender}これを使う
-		/* if len(pbcm.ReversedMergedContracts[itxSender]) < 100 || len(pbcm.ReversedMergedContracts[itxRecipient]) < 100 {
-			pbcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
-		} */
 		pbcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 	}
-}
-
-// マージされた頂点を取得
-func (pbcm *ProposalBrokerCommitteeModule) getMergedVertex(addr string) partition.Vertex {
-	if mergedVertex, ok := pbcm.ClpaGraph.MergedContracts[addr]; ok {
-		return mergedVertex
-	}
-	return partition.Vertex{Addr: addr}
-}
-
-// 内部トランザクションをスキップするかどうかの判定
-func (pbcm *ProposalBrokerCommitteeModule) shouldSkipInternalTx(itx *core.InternalTransaction) bool {
-	mergedU, isMergedU := pbcm.ClpaGraph.MergedContracts[itx.Recipient]
-	mergedV, isMergedV := pbcm.ClpaGraph.MergedContracts[itx.Sender]
-	return isMergedU && isMergedV && mergedU == mergedV
 }
 
 func (pbcm *ProposalBrokerCommitteeModule) createConfirm(txs []*core.Transaction) {

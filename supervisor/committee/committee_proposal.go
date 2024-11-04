@@ -241,7 +241,7 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 			pcm.ClpaTest.UpdateMeasureRecord(pcm.ClpaGraph)
 
 			// マージされたコントラクトのマップがResetされないように. 更新してからclpaMapSendする
-			pcm.MergedContracts = pcm.ClpaGraph.MergedContracts
+			pcm.MergedContracts = pcm.ClpaGraph.UnionFind.GetParentMap()
 			pcm.ReversedMergedContracts = pbft_all.ReverseMap(pcm.MergedContracts)
 			pcm.UnionFind = pcm.ClpaGraph.UnionFind
 
@@ -308,7 +308,7 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 			pcm.ClpaTest.UpdateMeasureRecord(pcm.ClpaGraph)
 
 			// マージされたコントラクトのマップがResetされないように
-			pcm.MergedContracts = pcm.ClpaGraph.MergedContracts
+			pcm.MergedContracts = pcm.ClpaGraph.UnionFind.GetParentMap()
 			pcm.ReversedMergedContracts = pbft_all.ReverseMap(pcm.MergedContracts)
 			pcm.UnionFind = pcm.ClpaGraph.UnionFind
 
@@ -369,7 +369,7 @@ func (pcm *ProposalCommitteeModule) clpaMapSend(m map[string]uint64) {
 	defer mergedContractsFile.Close()
 	mergedContractsFile.WriteString(fmt.Sprintf("Epoch: %d\n", pcm.curEpoch))
 	for key, vertex := range pcm.MergedContracts {
-		line := fmt.Sprintf("%s: {Addr: %s, IsMerged: %t}\n", key, vertex.Addr, vertex.IsMerged)
+		line := fmt.Sprintf("%s: {Addr: %s}\n", key, vertex.Addr)
 		if _, err := mergedContractsFile.WriteString(line); err != nil {
 			log.Fatalf("failed to write to merged_contracts.txt: %v", err)
 		}
@@ -384,7 +384,7 @@ func (pcm *ProposalCommitteeModule) clpaMapSend(m map[string]uint64) {
 	defer reversedContractsFile.Close()
 
 	for vertex, addresses := range reversedMap {
-		line := fmt.Sprintf("{Addr: %s, IsMerged: %t}: %v\n", vertex.Addr, vertex.IsMerged, addresses)
+		line := fmt.Sprintf("{Addr: %s}: %d\n", vertex.Addr, len(addresses))
 		if _, err := reversedContractsFile.WriteString(line); err != nil {
 			log.Fatalf("failed to write to reversed_merged_contracts.txt: %v", err)
 		}
@@ -397,8 +397,7 @@ func (pcm *ProposalCommitteeModule) clpaReset() {
 	for key, val := range pcm.modifiedMap {
 		pcm.ClpaGraph.PartitionMap[partition.Vertex{Addr: key}] = int(val)
 	}
-	// MergedContractsがResetされないように
-	pcm.ClpaGraph.MergedContracts = pcm.MergedContracts
+	// Resetされないように
 	pcm.ClpaGraph.UnionFind = pcm.UnionFind
 }
 
@@ -420,23 +419,20 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	pcm.processTransactions(b.InnerShardTxs)
 	pcm.processTransactions(b.Relay2Txs)
 
-	// pcm.ClpaGraph.MergedContracts = pcm.ClpaGraph.UnionFind.GetParentMap()
-
 	duration := time.Since(start)
 	pcm.sl.Slog.Printf("BlockInfoMsg()の実行時間は %v.\n", duration)
 }
 
 func (pcm *ProposalCommitteeModule) processTransactions(txs []*core.Transaction) {
 	for _, tx := range txs {
-		if mergedVertex, ok := pcm.ClpaGraph.MergedContracts[tx.Recipient]; ok {
-			pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, mergedVertex)
-		} else {
-			pcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, partition.Vertex{Addr: tx.Recipient})
-		}
+		recepient := partition.Vertex{Addr: pcm.ClpaGraph.UnionFind.Find(tx.Recipient)}
+		sender := partition.Vertex{Addr: pcm.ClpaGraph.UnionFind.Find(tx.Sender)}
+
+		pcm.ClpaGraph.AddEdge(sender, recepient)
 
 		// 内部トランザクションを処理
 		for _, itx := range tx.InternalTxs {
-			if pcm.shouldSkipInternalTx(itx) {
+			if pcm.UnionFind.IsConnected(itx.Sender, itx.Recipient) {
 				// Edgeを追加しない
 				continue
 			}
@@ -447,8 +443,8 @@ func (pcm *ProposalCommitteeModule) processTransactions(txs []*core.Transaction)
 
 // 内部トランザクション処理
 func (pcm *ProposalCommitteeModule) processInternalTx(itx *core.InternalTransaction) {
-	itxSender := pcm.getMergedVertex(itx.Sender)
-	itxRecipient := pcm.getMergedVertex(itx.Recipient)
+	itxSender := partition.Vertex{Addr: pcm.ClpaGraph.UnionFind.Find(itx.Sender)}
+	itxRecipient := partition.Vertex{Addr: pcm.ClpaGraph.UnionFind.Find(itx.Recipient)}
 
 	// マージされた送信者と受信者を使ってエッジを追加
 	pcm.ClpaGraph.AddEdge(itxSender, itxRecipient)
@@ -456,24 +452,6 @@ func (pcm *ProposalCommitteeModule) processInternalTx(itx *core.InternalTransact
 	// 両方がコントラクトの場合はマージ操作を実行
 	if itx.SenderIsContract && itx.RecipientIsContract {
 		// ATTENTION: MergeContractsの引数は、partition.Vertex{Addr: itx.Sender}これを使う
-		/* if len(pcm.ReversedMergedContracts[itxSender]) < 100 || len(pcm.ReversedMergedContracts[itxRecipient]) < 100 {
-			pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
-		} */
 		pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 	}
-}
-
-// マージされた頂点を取得
-func (pcm *ProposalCommitteeModule) getMergedVertex(addr string) partition.Vertex {
-	if mergedVertex, ok := pcm.ClpaGraph.MergedContracts[addr]; ok {
-		return mergedVertex
-	}
-	return partition.Vertex{Addr: addr}
-}
-
-// 内部トランザクションをスキップするかどうかの判定
-func (pcm *ProposalCommitteeModule) shouldSkipInternalTx(itx *core.InternalTransaction) bool {
-	mergedU, isMergedU := pcm.ClpaGraph.MergedContracts[itx.Recipient]
-	mergedV, isMergedV := pcm.ClpaGraph.MergedContracts[itx.Sender]
-	return isMergedU && isMergedV && mergedU == mergedV
 }

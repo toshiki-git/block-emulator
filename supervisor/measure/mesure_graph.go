@@ -46,8 +46,8 @@ func (tg *TestModule_CLPA) UpdateMeasureRecord(cs *partition.CLPAState) {
 	tg.totalVertexNum = append(tg.totalVertexNum, len(cs.PartitionMap))
 	tg.crossShardEdgeNum = append(tg.crossShardEdgeNum, cs.CrossShardEdgeNum)
 	tg.edges2Shard = append(tg.edges2Shard, cs.Edges2Shard)
-	tg.mergedVertexNum = append(tg.mergedVertexNum, uniqueValueCount(cs.MergedContracts))
-	tg.mergedContractNum = append(tg.mergedContractNum, len(cs.MergedContracts))
+	tg.mergedVertexNum = append(tg.mergedVertexNum, uniqueValueCount(cs.UnionFind.GetParentMap()))
+	tg.mergedContractNum = append(tg.mergedContractNum, len(cs.UnionFind.GetParentMap()))
 	tg.executionTime = append(tg.executionTime, cs.ExecutionTime)
 }
 

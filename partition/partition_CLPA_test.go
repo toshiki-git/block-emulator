@@ -24,9 +24,9 @@ const (
 	SmartContractGraphShape = "box"
 	IsLoadInternalTx        = true
 	IsSkipContractTx        = false // コントラクトのトランザクションをスキップするかどうか
-	BlockTxFilePath         = "../20000000to20249999_BlockTransaction_1000000rows.csv"
-	ReadBlockNumber         = 20000010
-	InternalTxFilePath      = "../selectedInternalTxs_10K.csv"
+	BlockTxFilePath         = "../20000000to20249999_BlockTransaction.csv"
+	ReadBlockNumber         = 20000000
+	InternalTxFilePath      = "../selectedInternalTxs_1000K.csv"
 )
 
 // shardの色を定義(67色)
@@ -424,32 +424,12 @@ func TestMergeContracts_UAlreadyMerged(t *testing.T) {
 
 	state.AddVertex(u)
 	state.AddVertex(v)
-	state.MergedContracts[u.Addr] = mergedU
+	state.UnionFind.GetParentMap()[u.Addr] = mergedU
 
 	mergedVertex := state.MergeContracts(u, v)
 
 	fmt.Println(mergedVertex)
 
-}
-
-// Test case 3: Both u and v are already merged, and they are merged into a new vertex
-func TestMergeContracts_BothAlreadyMerged(t *testing.T) {
-	state := new(CLPAState)
-	state.Init_CLPAState(0.5, 100, 4)
-
-	u := Vertex{Addr: "A"}
-	v := Vertex{Addr: "B"}
-	mergedU := Vertex{Addr: "merged_A"}
-	mergedV := Vertex{Addr: "merged_B"}
-
-	state.AddVertex(u)
-	state.AddVertex(v)
-	state.MergedContracts[u.Addr] = mergedU
-	state.MergedContracts[v.Addr] = mergedV
-
-	mergedVertex := state.MergeContracts(u, v)
-
-	fmt.Println(mergedVertex)
 }
 
 // Test case 4: Edges are correctly updated after merging
@@ -521,21 +501,21 @@ func TestMergeContracts_ComplexMerge(t *testing.T) {
 	// 初期グラフの状態を表示
 	fmt.Println("Before any merges:")
 	state.NetGraph.PrintGraph()
-	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+	fmt.Printf("MergedContracts: %v\n", state.UnionFind.GetParentMap())
 
 	// 1回目のマージ: A と B のマージ
 	fmt.Println("Merging A and B...")
 	mergedVertex1 := state.MergeContracts(a, b)
 	fmt.Println("mergedVertexA_B: ", mergedVertex1)
 	state.NetGraph.PrintGraph()
-	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+	fmt.Printf("MergedContracts: %v\n", state.UnionFind.GetParentMap())
 
 	// 2回目のマージ: A と E のマージ
 	fmt.Println("Merging A and E...")
 	mergedVertex2 := state.MergeContracts(a, e)
 	fmt.Println("mergedVertexA_B_E: ", mergedVertex2)
 	state.NetGraph.PrintGraph()
-	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+	fmt.Printf("MergedContracts: %v\n", state.UnionFind.GetParentMap())
 
 }
 
@@ -566,32 +546,32 @@ func TestMergeContracts_ComplexMerge2(t *testing.T) {
 	// 初期グラフの状態を表示
 	fmt.Println("Before any merges:")
 	state.NetGraph.PrintGraph()
-	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+	fmt.Printf("MergedContracts: %v\n", state.UnionFind.GetParentMap())
 
 	// 1回目のマージ: A と B のマージ
 	fmt.Println("Merging A and B...")
 	mergedVertex1 := state.MergeContracts(a, b)
 	fmt.Println("mergedVertexA_B: ", mergedVertex1)
 	state.NetGraph.PrintGraph()
-	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+	fmt.Printf("MergedContracts: %v\n", state.UnionFind.GetParentMap())
 
 	// 2回目のマージ: D と E のマージ
 	fmt.Println("Merging D and E...")
 	mergedVertex2 := state.MergeContracts(d, e)
 	fmt.Println("mergedVertexD_E: ", mergedVertex2)
 	state.NetGraph.PrintGraph()
-	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+	fmt.Printf("MergedContracts: %v\n", state.UnionFind.GetParentMap())
 
 	fmt.Println("Merging A and D...")
 	mergedVertex3 := state.MergeContracts(a, d)
 	fmt.Println("mergedVertexD_E: ", mergedVertex3)
 	state.NetGraph.PrintGraph()
-	fmt.Printf("MergedContracts: %v\n", state.MergedContracts)
+	fmt.Printf("MergedContracts: %v\n", state.UnionFind.GetParentMap())
 
 	/* 	// 最終的なグラフの状態を確認
 	   	fmt.Println("Final graph after all merges:")
 	   	state.NetGraph.PrintGraph()
-	   	fmt.Printf("MergedContracts: %v\n", state.MergedContracts) */
+	   	fmt.Printf("MergedContracts: %v\n", state.UnionFind.GetParentMap()) */
 	writeGraphToDotFile("final_partition.dot", *state, nil)
 }
 
@@ -699,16 +679,10 @@ func TestMergeContracts_RealData(t *testing.T) {
 			continue
 		}
 
-		// 送信者と受信者の頂点を作成
-		txSender := Vertex{Addr: tx.Sender}
-		txRecipient := Vertex{Addr: tx.Recipient}
+		recepient := Vertex{Addr: clpaState_merged.UnionFind.Find(tx.Recipient)}
+		sender := Vertex{Addr: clpaState_merged.UnionFind.Find(tx.Sender)}
 
-		// 受信者がすでにマージされているか確認
-		if mergedVertex, ok := clpaState_merged.MergedContracts[tx.Recipient]; ok {
-			clpaState_merged.AddEdge(txSender, mergedVertex)
-		} else {
-			clpaState_merged.AddEdge(txSender, txRecipient)
-		}
+		clpaState_merged.AddEdge(sender, recepient)
 
 		// 内部トランザクションの処理
 		for _, itx := range tx.InternalTxs {
@@ -718,38 +692,19 @@ func TestMergeContracts_RealData(t *testing.T) {
 				continue
 			}
 
-			if itx.Sender == itx.Recipient {
+			if clpaState_merged.UnionFind.IsConnected(itx.Sender, itx.Recipient) {
+				// Edgeを追加しない
 				continue
 			}
-
-			mergedU, isMergedU := clpaState_merged.MergedContracts[itx.Recipient]
-			mergedV, isMergedV := clpaState_merged.MergedContracts[itx.Sender]
-
-			if isMergedU && isMergedV && mergedU == mergedV {
-				fmt.Println("Skipping internal transaction between merged contracts: ", itx.Sender, itx.Recipient)
-				continue
-			}
-
-			// 内部トランザクションの送信者と受信者の頂点を作成
-			itxSender := Vertex{Addr: itx.Sender}
-			itxRecipient := Vertex{Addr: itx.Recipient}
-
-			// 送信者がすでにマージされているか確認
-			if mergedSenderVertex, ok := clpaState_merged.MergedContracts[itx.Sender]; ok {
-				itxSender = mergedSenderVertex
-			}
-
-			// 受信者がすでにマージされているか確認
-			if mergedRecipientVertex, ok := clpaState_merged.MergedContracts[itx.Recipient]; ok {
-				itxRecipient = mergedRecipientVertex
-			}
+			itxSender := Vertex{Addr: clpaState_merged.UnionFind.Find(itx.Sender)}
+			itxRecipient := Vertex{Addr: clpaState_merged.UnionFind.Find(itx.Recipient)}
 
 			// マージされた送信者と受信者を使ってエッジを追加
 			clpaState_merged.AddEdge(itxSender, itxRecipient)
 
-			// 両方のコントラクトがマージ対象の場合は、マージ操作を実行
+			// 両方がコントラクトの場合はマージ操作を実行
 			if itx.SenderIsContract && itx.RecipientIsContract {
-				//fmt.Println("Merging contracts: ", itx.Sender, itx.Recipient)
+				// ATTENTION: MergeContractsの引数は、partition.Vertex{Addr: itx.Sender}これを使う
 				clpaState_merged.MergeContracts(Vertex{Addr: itx.Sender}, Vertex{Addr: itx.Recipient})
 			}
 		}
@@ -759,7 +714,7 @@ func TestMergeContracts_RealData(t *testing.T) {
 	clpaState_merged.CLPA_Partition()
 
 	fmt.Println("MergedContracts:")
-	for _, value := range clpaState_merged.MergedContracts {
+	for _, value := range clpaState_merged.UnionFind.GetParentMap() {
 		//fmt.Printf("Key: %s, Value: %s\n", key, value.Addr)
 		mergedVertex[value.Addr] = true
 	}
