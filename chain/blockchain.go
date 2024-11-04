@@ -165,8 +165,16 @@ func (bc *BlockChain) GetUpdateStatusTrie(txs []*core.Transaction) common.Hash {
 		return common.BytesToHash(bc.CurrentBlock.Header.StateRoot)
 	}
 	rt, ns := st.Commit(false)
+
+	if ns == nil {
+		fmt.Println("nsはnilです")
+	} else {
+		fmt.Println("nsはnilではありません")
+	}
+	// trie.NewWithNodeSet(ns)がnilを返す場合がある bandwidthが大きいとエラーになる
 	err = bc.triedb.Update(trie.NewWithNodeSet(ns))
 	if err != nil {
+		// ここでエラーが出る場合はがあるShardNum=8の場合
 		log.Panic()
 	}
 	err = bc.triedb.Commit(rt, false)
