@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"log"
+	"time"
 )
 
 var (
@@ -39,6 +40,18 @@ type AccountStateAndTx struct {
 	AccountState []*core.AccountState
 	Txs          []*core.Transaction
 	FromShard    uint64
+}
+
+type CLPAResult struct {
+	EpochID           int
+	CrossShardEdgeNum int
+	VertexsNumInShard []int
+	VertexNum         int
+	TotalVertexNum    int
+	Edges2Shard       []int
+	MergedVertexNum   int
+	MergedContractNum int
+	ExecutionTime     time.Duration
 }
 
 func (atm *AccountTransferMsg) Encode() []byte {

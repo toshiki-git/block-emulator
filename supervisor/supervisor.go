@@ -63,7 +63,7 @@ func (d *Supervisor) NewSupervisor(ip string, pcc *params.ChainConfig, committee
 	case "Broker":
 		d.comMod = committee.NewBrokerCommitteeMod(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.TotalDataSize, params.TxBatchSize)
 	case "Proposal":
-		d.comMod = committee.NewProposalCommitteeModule(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.InternalTxFile, params.TotalDataSize, params.TxBatchSize, params.ReconfigTimeGap, measure.NewTestModule_CLPA())
+		d.comMod = committee.NewProposalCommitteeModule(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.InternalTxFile, params.TotalDataSize, params.TxBatchSize, params.ReconfigTimeGap)
 	case "ProposalBroker":
 		d.comMod = committee.NewProposalBrokerCommitteeModule(d.Ip_nodeTable, d.Ss, d.sl, params.DatasetFile, params.InternalTxFile, params.TotalDataSize, params.TxBatchSize, params.ReconfigTimeGap)
 	default:
@@ -91,6 +91,8 @@ func (d *Supervisor) NewSupervisor(ip string, pcc *params.ChainConfig, committee
 			d.testMeasureMods = append(d.testMeasureMods, measure.NewTestTxNumCount_Broker())
 		case "Tx_Details":
 			d.testMeasureMods = append(d.testMeasureMods, measure.NewTestTxDetail())
+		case "ALL_CLPA":
+			d.testMeasureMods = append(d.testMeasureMods, measure.NewTestModule_CLPA())
 		default:
 		}
 	}
@@ -259,12 +261,6 @@ func (d *Supervisor) CloseSupervisor() {
 		d.sl.Slog.Println(measureMod.OutputMetricName())
 		d.sl.Slog.Println(measureMod.OutputRecord())
 		println()
-	}
-	// CLPAの結果を出力
-	switch d.comMod.(type) {
-	case *committee.ProposalCommitteeModule:
-		d.sl.Slog.Println(d.comMod.(*committee.ProposalCommitteeModule).ClpaTest.OutputMetricName())
-		d.sl.Slog.Println(d.comMod.(*committee.ProposalCommitteeModule).ClpaTest.OutputRecord())
 	}
 
 	utils.CopyFile("paramsConfig.json", params.ExpDataRootDir+"/paramsConfig.json")

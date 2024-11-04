@@ -35,6 +35,7 @@ type ProposalBrokerCommitteeModule struct {
 	curEpoch            int32
 	clpaLock            sync.Mutex
 	ClpaGraph           *partition.CLPAState
+	ClpaGraphHistory    []*partition.CLPAState
 	modifiedMap         map[string]uint64
 	clpaLastRunningTime time.Time
 	clpaFreq            int
@@ -72,6 +73,7 @@ func NewProposalBrokerCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string,
 		batchDataNum:        batchNum,
 		nowDataNum:          0,
 		ClpaGraph:           cg,
+		ClpaGraphHistory:    make([]*partition.CLPAState, 0),
 		modifiedMap:         make(map[string]uint64),
 		clpaFreq:            clpaFrequency,
 		clpaLastRunningTime: time.Time{},
@@ -308,6 +310,7 @@ func (pbcm *ProposalBrokerCommitteeModule) clpaMapSend(m map[string]uint64) {
 }
 
 func (pbcm *ProposalBrokerCommitteeModule) clpaReset() {
+	pbcm.ClpaGraphHistory = append(pbcm.ClpaGraphHistory, pbcm.ClpaGraph)
 	pbcm.ClpaGraph = new(partition.CLPAState)
 	pbcm.ClpaGraph.Init_CLPAState(0.5, 100, params.ShardNum)
 	for key, val := range pbcm.modifiedMap {
@@ -319,8 +322,10 @@ func (pbcm *ProposalBrokerCommitteeModule) clpaReset() {
 func (pbcm *ProposalBrokerCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	start := time.Now()
 	pbcm.sl.Slog.Printf("received from shard %d in epoch %d.\n", b.SenderShardID, b.Epoch)
+	IsChangeEpoch := false
 	if atomic.CompareAndSwapInt32(&pbcm.curEpoch, int32(b.Epoch-1), int32(b.Epoch)) {
 		pbcm.sl.Slog.Println("this curEpoch is updated", b.Epoch)
+		IsChangeEpoch = true
 	}
 	if b.BlockBodyLength == 0 {
 		return
@@ -362,7 +367,19 @@ func (pbcm *ProposalBrokerCommitteeModule) HandleBlockInfo(b *message.BlockInfoM
 
 	pbcm.clpaLock.Unlock()
 	duration := time.Since(start)
-	pbcm.sl.Slog.Printf("BlockInfoMsg()の実行時間は %v.\n", duration)
+	pbcm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)
+
+	if IsChangeEpoch {
+		pbcm.updateCLPAResult(b)
+	}
+}
+
+func (pbcm *ProposalBrokerCommitteeModule) updateCLPAResult(b *message.BlockInfoMsg) {
+	if b.CLPAResult == nil {
+		b.CLPAResult = &partition.CLPAState{} // 必要な構造体で初期化
+	}
+	pbcm.sl.Slog.Println("Epochが変わったのでResultの集計")
+	b.CLPAResult = pbcm.ClpaGraphHistory[b.Epoch-1]
 }
 
 func (pbcm *ProposalBrokerCommitteeModule) processTransactions(txs []*core.Transaction) {

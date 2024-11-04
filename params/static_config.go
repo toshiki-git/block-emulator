@@ -23,4 +23,5 @@ var (
 	CommitteeMethod  = []string{"CLPA_Broker", "CLPA", "Broker", "Relay", "Proposal", "ProposalBroker"} //TODO: "Proposal"を"Proposalに変更"
 	MeasureBrokerMod = []string{"TPS_Broker", "TCL_Broker", "CrossTxRate_Broker", "TxNumberCount_Broker"}
 	MeasureRelayMod  = []string{"TPS_Relay", "TCL_Relay", "CrossTxRate_Relay", "TxNumberCount_Relay"}
+	MesureCLPAMod    = []string{"ALL_CLPA"}
 )

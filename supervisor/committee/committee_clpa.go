@@ -30,6 +30,7 @@ type CLPACommitteeModule struct {
 	curEpoch            int32
 	clpaLock            sync.Mutex
 	clpaGraph           *partition.CLPAState
+	ClpaGraphHistory    []*partition.CLPAState
 	modifiedMap         map[string]uint64
 	clpaLastRunningTime time.Time
 	clpaFreq            int
@@ -51,6 +52,7 @@ func NewCLPACommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *signa
 		batchDataNum:        batchNum,
 		nowDataNum:          0,
 		clpaGraph:           cg,
+		ClpaGraphHistory:    make([]*partition.CLPAState, 0),
 		modifiedMap:         make(map[string]uint64),
 		clpaFreq:            clpaFrequency,
 		clpaLastRunningTime: time.Time{},
@@ -206,6 +208,7 @@ func (ccm *CLPACommitteeModule) clpaMapSend(m map[string]uint64) {
 }
 
 func (ccm *CLPACommitteeModule) clpaReset() {
+	ccm.ClpaGraphHistory = append(ccm.ClpaGraphHistory, ccm.clpaGraph)
 	ccm.clpaGraph = new(partition.CLPAState)
 	ccm.clpaGraph.Init_CLPAState(0.5, 100, params.ShardNum)
 	for key, val := range ccm.modifiedMap {
@@ -215,9 +218,12 @@ func (ccm *CLPACommitteeModule) clpaReset() {
 
 // handle block information when received CBlockInfo message(pbft node commited)pbftノードがコミットしたとき
 func (ccm *CLPACommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
+	start := time.Now()
 	ccm.sl.Slog.Printf("Supervisor: received from shard %d in epoch %d.\n", b.SenderShardID, b.Epoch)
+	IsChangeEpoch := false
 	if atomic.CompareAndSwapInt32(&ccm.curEpoch, int32(b.Epoch-1), int32(b.Epoch)) {
 		ccm.sl.Slog.Println("this curEpoch is updated", b.Epoch)
+		IsChangeEpoch = true
 	}
 	if b.BlockBodyLength == 0 {
 		return
@@ -230,4 +236,19 @@ func (ccm *CLPACommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 		ccm.clpaGraph.AddEdge(partition.Vertex{Addr: r2tx.Sender}, partition.Vertex{Addr: r2tx.Recipient})
 	}
 	ccm.clpaLock.Unlock()
+
+	duration := time.Since(start)
+	ccm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)
+
+	if IsChangeEpoch {
+		ccm.updateCLPAResult(b)
+	}
+}
+
+func (ccm *CLPACommitteeModule) updateCLPAResult(b *message.BlockInfoMsg) {
+	if b.CLPAResult == nil {
+		b.CLPAResult = &partition.CLPAState{} // 必要な構造体で初期化
+	}
+	ccm.sl.Slog.Println("Epochが変わったのでResultの集計")
+	b.CLPAResult = ccm.ClpaGraphHistory[b.Epoch-1]
 }

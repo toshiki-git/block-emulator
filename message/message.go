@@ -2,6 +2,7 @@ package message
 
 import (
 	"blockEmulator/core"
+	"blockEmulator/partition"
 	"blockEmulator/shard"
 	"time"
 )
@@ -103,6 +104,9 @@ type BlockInfoMsg struct {
 	// for broker
 	Broker1Txs []*core.Transaction // cross transactions at first time by broker
 	Broker2Txs []*core.Transaction // cross transactions at second time by broker
+
+	// for CLPA
+	CLPAResult *partition.CLPAState
 }
 
 type SeqIDinfo struct {

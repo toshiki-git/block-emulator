@@ -47,14 +47,14 @@ func initConfig(nid, nnm, sid, snm uint64) *params.ChainConfig {
 func BuildSupervisor(nnm, snm uint64) {
 	methodID := params.ConsensusMethod
 	var measureMod []string
-	if methodID == 0 || methodID == 2 {
+	if methodID == 0 || methodID == 2 || methodID == 5 { // methodID=5→ProposalBrokerBase
 		measureMod = params.MeasureBrokerMod
-	} else if methodID == 1 || methodID == 3 {
+	} else if methodID == 1 || methodID == 3 || methodID == 4 { // methodID=4→ProposalRelayBase
 		measureMod = params.MeasureRelayMod
-	} else if methodID == 4 { // ProposalRelayBase
-		measureMod = params.MeasureRelayMod
-	} else if methodID == 5 { // ProposalBrokerBase
-		measureMod = params.MeasureBrokerMod
+	}
+
+	if methodID == 0 || methodID == 1 || methodID == 4 || methodID == 5 {
+		measureMod = append(measureMod, "ALL_CLPA")
 	}
 	measureMod = append(measureMod, "Tx_Details")
 

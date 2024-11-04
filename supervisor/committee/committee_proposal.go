@@ -7,7 +7,6 @@ import (
 	"blockEmulator/networks"
 	"blockEmulator/params"
 	"blockEmulator/partition"
-	"blockEmulator/supervisor/measure"
 	"blockEmulator/supervisor/signal"
 	"blockEmulator/supervisor/supervisor_log"
 	"blockEmulator/utils"
@@ -34,7 +33,7 @@ type ProposalCommitteeModule struct {
 	curEpoch                int32
 	clpaLock                sync.Mutex
 	ClpaGraph               *partition.CLPAState
-	ClpaTest                *measure.TestModule_CLPA
+	ClpaGraphHistory        []*partition.CLPAState
 	modifiedMap             map[string]uint64 // key: address, value: shardID
 	clpaLastRunningTime     time.Time
 	clpaFreq                int
@@ -53,7 +52,7 @@ type ProposalCommitteeModule struct {
 	internalTxMap map[string][]*core.InternalTransaction
 }
 
-func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *signal.StopSignal, sl *supervisor_log.SupervisorLog, csvFilePath, internalTxCsvPath string, dataNum, batchNum, clpaFrequency int, clpaTest *measure.TestModule_CLPA) *ProposalCommitteeModule {
+func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *signal.StopSignal, sl *supervisor_log.SupervisorLog, csvFilePath, internalTxCsvPath string, dataNum, batchNum, clpaFrequency int) *ProposalCommitteeModule {
 	cg := new(partition.CLPAState)
 	// argument (WeightPenalty, MaxIterations, ShardNum)
 	cg.Init_CLPAState(0.5, 100, params.ShardNum)
@@ -65,7 +64,7 @@ func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *s
 		batchDataNum:        batchNum,
 		nowDataNum:          0,
 		ClpaGraph:           cg,
-		ClpaTest:            clpaTest,
+		ClpaGraphHistory:    make([]*partition.CLPAState, 0),
 		modifiedMap:         make(map[string]uint64),
 		clpaFreq:            clpaFrequency,
 		clpaLastRunningTime: time.Time{},
@@ -238,7 +237,6 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 			partitionFile.Close()
 
 			mmap, _ := pcm.ClpaGraph.CLPA_Partition() // mmapはPartitionMapとは違って、移動するもののみを含む
-			pcm.ClpaTest.UpdateMeasureRecord(pcm.ClpaGraph)
 
 			// マージされたコントラクトのマップがResetされないように. 更新してからclpaMapSendする
 			pcm.MergedContracts = pcm.ClpaGraph.UnionFind.GetParentMap()
@@ -305,7 +303,6 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 			vertexSetFile.Close()
 
 			mmap, _ := pcm.ClpaGraph.CLPA_Partition() // mmapはPartitionMapとは違って、移動するもののみを含む
-			pcm.ClpaTest.UpdateMeasureRecord(pcm.ClpaGraph)
 
 			// マージされたコントラクトのマップがResetされないように
 			pcm.MergedContracts = pcm.ClpaGraph.UnionFind.GetParentMap()
@@ -392,6 +389,7 @@ func (pcm *ProposalCommitteeModule) clpaMapSend(m map[string]uint64) {
 }
 
 func (pcm *ProposalCommitteeModule) clpaReset() {
+	pcm.ClpaGraphHistory = append(pcm.ClpaGraphHistory, pcm.ClpaGraph)
 	pcm.ClpaGraph = new(partition.CLPAState)
 	pcm.ClpaGraph.Init_CLPAState(0.5, 100, params.ShardNum)
 	for key, val := range pcm.modifiedMap {
@@ -404,8 +402,10 @@ func (pcm *ProposalCommitteeModule) clpaReset() {
 func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	start := time.Now()
 	pcm.sl.Slog.Printf("Supervisor: received from shard %d in epoch %d.\n", b.SenderShardID, b.Epoch)
+	IsChangeEpoch := false
 	if atomic.CompareAndSwapInt32(&pcm.curEpoch, int32(b.Epoch-1), int32(b.Epoch)) {
 		pcm.sl.Slog.Println("this curEpoch is updated", b.Epoch)
+		IsChangeEpoch = true
 	}
 	if b.BlockBodyLength == 0 {
 		return
@@ -420,7 +420,19 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	pcm.processTransactions(b.Relay2Txs)
 
 	duration := time.Since(start)
-	pcm.sl.Slog.Printf("BlockInfoMsg()の実行時間は %v.\n", duration)
+	pcm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)
+
+	if IsChangeEpoch {
+		pcm.updateCLPAResult(b)
+	}
+}
+
+func (pcm *ProposalCommitteeModule) updateCLPAResult(b *message.BlockInfoMsg) {
+	if b.CLPAResult == nil {
+		b.CLPAResult = &partition.CLPAState{} // 必要な構造体で初期化
+	}
+	pcm.sl.Slog.Println("Epochが変わったのでResultの集計")
+	b.CLPAResult = pcm.ClpaGraphHistory[b.Epoch-1]
 }
 
 func (pcm *ProposalCommitteeModule) processTransactions(txs []*core.Transaction) {

@@ -1,7 +1,7 @@
 package measure
 
 import (
-	"blockEmulator/partition"
+	"blockEmulator/message"
 	"fmt"
 	"strconv"
 	"time"
@@ -39,16 +39,19 @@ func (tg *TestModule_CLPA) OutputMetricName() string {
 	return "CLPA"
 }
 
-func (tg *TestModule_CLPA) UpdateMeasureRecord(cs *partition.CLPAState) {
-	tg.epochID = append(tg.epochID, len(tg.epochID)+1)
-	tg.vertexsNumInShard = append(tg.vertexsNumInShard, cs.VertexsNumInShard)
-	tg.vertexNum = append(tg.vertexNum, sum(cs.VertexsNumInShard))
-	tg.totalVertexNum = append(tg.totalVertexNum, len(cs.PartitionMap))
-	tg.crossShardEdgeNum = append(tg.crossShardEdgeNum, cs.CrossShardEdgeNum)
-	tg.edges2Shard = append(tg.edges2Shard, cs.Edges2Shard)
-	tg.mergedVertexNum = append(tg.mergedVertexNum, uniqueValueCount(cs.UnionFind.GetParentMap()))
-	tg.mergedContractNum = append(tg.mergedContractNum, len(cs.UnionFind.GetParentMap()))
-	tg.executionTime = append(tg.executionTime, cs.ExecutionTime)
+func (tg *TestModule_CLPA) UpdateMeasureRecord(b *message.BlockInfoMsg) {
+	if b.CLPAResult == nil {
+		return
+	}
+	tg.epochID = append(tg.epochID, b.Epoch-1)
+	tg.vertexsNumInShard = append(tg.vertexsNumInShard, b.CLPAResult.VertexsNumInShard)
+	tg.vertexNum = append(tg.vertexNum, sum(b.CLPAResult.VertexsNumInShard))
+	tg.totalVertexNum = append(tg.totalVertexNum, len(b.CLPAResult.PartitionMap))
+	tg.crossShardEdgeNum = append(tg.crossShardEdgeNum, b.CLPAResult.CrossShardEdgeNum)
+	tg.edges2Shard = append(tg.edges2Shard, b.CLPAResult.Edges2Shard)
+	tg.mergedVertexNum = append(tg.mergedVertexNum, uniqueValueCount(b.CLPAResult.UnionFind.GetParentMap()))
+	tg.mergedContractNum = append(tg.mergedContractNum, len(b.CLPAResult.UnionFind.GetParentMap()))
+	tg.executionTime = append(tg.executionTime, b.CLPAResult.ExecutionTime)
 }
 
 func (tg *TestModule_CLPA) HandleExtraMessage([]byte) {}
