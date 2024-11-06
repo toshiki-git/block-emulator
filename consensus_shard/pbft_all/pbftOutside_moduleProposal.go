@@ -40,7 +40,7 @@ func (prom *ProposalRelayOutsideModule) handleRelay(content []byte) {
 	if err != nil {
 		log.Panic(err)
 	}
-	prom.pbftNode.pl.Plog.Printf("S%dN%d : has received relay txs from shard %d, the senderSeq is %d\n", prom.pbftNode.ShardID, prom.pbftNode.NodeID, relay.SenderShardID, relay.SenderSeq)
+	prom.pbftNode.pl.Plog.Printf("S%dN%d : has received relay %d txs from shard %d, the senderSeq is %d\n", prom.pbftNode.ShardID, prom.pbftNode.NodeID, len(relay.Txs), relay.SenderShardID, relay.SenderSeq)
 	prom.pbftNode.CurChain.Txpool.AddTxs2Pool(relay.Txs)
 	prom.pbftNode.seqMapLock.Lock()
 	prom.pbftNode.seqIDMap[relay.SenderShardID] = relay.SenderSeq
