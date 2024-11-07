@@ -1,6 +1,9 @@
 import csv
 import re
 import pandas as pd
+from collections import defaultdict
+import matplotlib.pyplot as plt
+
 
 # アドレスの形式が正しいかどうかをチェックする関数
 def is_valid_address(address):
@@ -149,8 +152,40 @@ def remove_columns_and_keep_comma(input_file, output_file, columns_to_remove):
 # print_tx_info(csv_path, 50000)
 # print_itx_info(csv_path_itx, 280742)
 
+def load_internal_txs_from_csv(csv_path):
+    internal_tx_map = defaultdict(int)
+    with open(csv_path, mode='r') as file:
+        reader = csv.reader(file)
+        # Loop through each row
+        for row in reader:
+            # Get the address from the 3rd column (index 2)
+            parent_tx_hash = row[2]
+            internal_tx_map[parent_tx_hash] += 1
 
-input_file = 'selectedInternalTxs_1000K.csv'  # 元のCSVファイル
-output_file = 'selectedInternalTxs_1000K_light.csv'  # 変換後のCSVファイル
-columns_to_remove = [0, 1, 9, 10]
-remove_columns_and_keep_comma(input_file, output_file, columns_to_remove)
+    # Calculate the average
+    if len(internal_tx_map) > 0:
+        average_internal_tx = sum(internal_tx_map.values()) / len(internal_tx_map)
+    else:
+        average_internal_tx = 0
+    print(f"Average internal transaction count: {average_internal_tx}")
+
+    # Group data into 10-count intervals and display in the terminal
+    range_counts = defaultdict(int)
+    for count in internal_tx_map.values():
+        # Find the appropriate range for each count
+        range_key = (count // 10) * 10
+        range_counts[range_key] += 1
+
+    # Print the results in 10-count intervals
+    print("Internal transaction counts by 10-count intervals:")
+    for range_start in sorted(range_counts.keys()):
+        range_end = range_start + 9
+        print(f"{range_start} - {range_end}: {range_counts[range_start]} occurrences")
+        
+# input_file = 'selectedInternalTxs_1000K.csv'  # 元のCSVファイル
+# output_file = 'selectedInternalTxs_1000K_light.csv'  # 変換後のCSVファイル
+# columns_to_remove = [0, 1, 9, 10]
+# remove_columns_and_keep_comma(input_file, output_file, columns_to_remove)
+
+csv_path = './dataset/selectedInternalTxs_1000K.csv'
+load_internal_txs_from_csv(csv_path)
