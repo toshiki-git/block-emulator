@@ -412,7 +412,7 @@ func (pbcm *ProposalBrokerCommitteeModule) processInternalTx(itx *core.InternalT
 	pbcm.ClpaGraph.AddEdge(itxSender, itxRecipient)
 
 	// 両方がコントラクトの場合はマージ操作を実行
-	if itx.SenderIsContract && itx.RecipientIsContract {
+	if params.IsMerge == 1 && itx.SenderIsContract && itx.RecipientIsContract {
 		// ATTENTION: MergeContractsの引数は、partition.Vertex{Addr: itx.Sender}これを使う
 		pbcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 	}

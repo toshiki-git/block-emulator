@@ -1,5 +1,7 @@
 package partition
 
+import "blockEmulator/params"
+
 type UnionFind struct {
 	Parent         map[string]string // 各アドレスの親アドレス
 	Rank           map[string]int    // 各アドレスのランク
@@ -18,8 +20,8 @@ func NewUnionFind() *UnionFind {
 		HasUnioned:     make(map[string]bool),
 		UnionCount:     make(map[string]int),
 		NodeUnionCount: make(map[string]int),
-		MaxUnion:       1000, //ここで最大のUnion操作回数を設定
-		MaxNodeUnion:   100,  //ここで各ノードの最大Union操作参加回数を設定
+		MaxUnion:       params.MaxUnion,     //ここで最大のUnion操作回数を設定
+		MaxNodeUnion:   params.MaxNodeUnion, //ここで各ノードの最大Union操作参加回数を設定
 	}
 }
 

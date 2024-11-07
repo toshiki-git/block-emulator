@@ -172,6 +172,10 @@ func (pcm *ProposalCommitteeModule) data2txWithContract(data []string, nonce uin
 		if internalTxs, ok := pcm.internalTxMap[txHash]; ok {
 			tx.InternalTxs = internalTxs
 		}
+
+		if len(tx.InternalTxs) > 300 {
+			pcm.sl.Slog.Printf("Internal TXが多すぎます。txHash: %s, InternalTxs: %d\n", txHash, len(tx.InternalTxs))
+		}
 		return tx, true
 	}
 
@@ -462,7 +466,7 @@ func (pcm *ProposalCommitteeModule) processInternalTx(itx *core.InternalTransact
 	pcm.ClpaGraph.AddEdge(itxSender, itxRecipient)
 
 	// 両方がコントラクトの場合はマージ操作を実行
-	if itx.SenderIsContract && itx.RecipientIsContract {
+	if params.IsMerge == 1 && itx.SenderIsContract && itx.RecipientIsContract {
 		// ATTENTION: MergeContractsの引数は、partition.Vertex{Addr: itx.Sender}これを使う
 		pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 	}

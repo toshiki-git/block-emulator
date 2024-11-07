@@ -92,15 +92,6 @@ func (g *Graph) transferEdgesAndRemove(source, mergedVertex Vertex) {
 	delete(g.VertexSet, source)
 }
 
-func (g *Graph) UpdateGraphForMerge(u, v, mergedVertex Vertex) {
-	g.RemoveEdge(u, v)
-	g.transferEdgesAndRemove(u, mergedVertex)
-	g.transferEdgesAndRemove(v, mergedVertex)
-
-	// Add the new merged vertex to the VertexSet
-	g.VertexSet[mergedVertex] = true
-}
-
 func (g *Graph) UpdateGraphForPartialMerge(u, mergedVertex Vertex) {
 	g.RemoveEdge(u, mergedVertex)
 	g.transferEdgesAndRemove(u, mergedVertex)

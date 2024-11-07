@@ -45,6 +45,9 @@ var (
 
 	// Proposal
 	InternalTxFile = `./selectedTxs_1000K.csv` // The internal transaction data path
+	MaxUnion       = 1000
+	MaxNodeUnion   = 100
+	IsMerge        = 1 // 1: merge, 0: not merge
 )
 
 // network layer
@@ -83,6 +86,9 @@ type globalConfig struct {
 
 	//Proposal
 	InternalTxFile string `json:"InternalTxFile"` // The internal transaction data path
+	MaxUnion       int    `json:"MaxUnion"`
+	MaxNodeUnion   int    `json:"MaxNodeUnion"`
+	IsMerge        int    `json:"IsMerge"`
 }
 
 func ReadConfigFile() {
@@ -135,4 +141,7 @@ func ReadConfigFile() {
 
 	// Proposal
 	InternalTxFile = config.InternalTxFile
+	MaxUnion = config.MaxUnion
+	MaxNodeUnion = config.MaxNodeUnion
+	IsMerge = config.IsMerge
 }

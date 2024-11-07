@@ -107,7 +107,7 @@ func (bc *BlockChain) GetUpdateStatusTrie(txs []*core.Transaction) common.Hash {
 	for i, tx := range txs {
 		// fmt.Printf("tx %d: %s, %s\n", i, tx.Sender, tx.Recipient)
 		// senderIn := false
-		// Relayの場合でshardが違う場合は: まずsenderの残高を引くだけ。1回目
+		// Relayの場合(senderとrecepientのshardが違う場合)でshardが違う場合は: まずsenderの残高を引くだけ。1回目
 		if !tx.Relayed && (bc.Get_PartitionMap(tx.Sender) == bc.ChainConfig.ShardID || tx.HasBroker) {
 			// senderIn = true
 			// fmt.Printf("the sender %s is in this shard %d, \n", tx.Sender, bc.ChainConfig.ShardID)
@@ -167,10 +167,11 @@ func (bc *BlockChain) GetUpdateStatusTrie(txs []*core.Transaction) common.Hash {
 	rt, ns := st.Commit(false)
 
 	if ns == nil {
-		fmt.Println("nsはnilです")
+		fmt.Println("nsはnilです。valueがすべて0なのでstateの更新はありません。GetUpdateStatusTrie()はretrueします")
 		for i, tx := range txs {
 			fmt.Printf("tx %d: sender %s shard %d, recipient %s shard %d\n", i, tx.Sender, bc.Get_PartitionMap(tx.Sender), tx.Recipient, bc.Get_PartitionMap(tx.Recipient))
 		}
+		return common.BytesToHash(bc.CurrentBlock.Header.StateRoot)
 	} else {
 		fmt.Println("nsはnilではありません")
 	}
