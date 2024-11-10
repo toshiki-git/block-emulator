@@ -35,6 +35,8 @@ type Transaction struct {
 	// Fields for smart contract transactions
 	RecipientIsContract bool
 	InternalTxs         []*InternalTransaction
+	LastItxProcessedIdx uint
+	IsTxProcessed       bool
 }
 
 func (tx *Transaction) PrintTx() string {

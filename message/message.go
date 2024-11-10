@@ -105,6 +105,9 @@ type BlockInfoMsg struct {
 	Broker1Txs []*core.Transaction // cross transactions at first time by broker
 	Broker2Txs []*core.Transaction // cross transactions at second time by broker
 
+	CrossInternalTxs     []*core.InternalTransaction // cross shard internal transactions
+	CompletedInternalTxs []*core.InternalTransaction // completed internal transactions
+
 	// for CLPA
 	CLPAResult *partition.CLPAState
 }

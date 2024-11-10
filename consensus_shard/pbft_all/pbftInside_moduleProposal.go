@@ -105,37 +105,101 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 		innerShardTxs := make([]*core.Transaction, 0)
 		relay1Txs := make([]*core.Transaction, 0)
 		relay2Txs := make([]*core.Transaction, 0)
+		crossInternalTxs := make([]*core.InternalTransaction, 0)
+		completedInternalTxs := make([]*core.InternalTransaction, 0)
 
 		for _, tx := range block.Body {
-			ssid := pphm.pbftNode.CurChain.Get_PartitionMap(tx.Sender)
-			// TODO: Receipientがmergeされているか確認
-			rsid := pphm.pbftNode.CurChain.Get_PartitionMap(tx.Recipient)
-			if !tx.Relayed && ssid != pphm.pbftNode.ShardID {
-				pphm.pbftNode.pl.Plog.Printf(
-					"[ERROR] Transaction relay status mismatch: expected ShardID=%d, got ssid=%d, rsid=%d. Sender=%s, Recipient=%s, Relayed=%t",
-					pphm.pbftNode.ShardID, ssid, rsid, tx.Sender, tx.Recipient, tx.Relayed,
-				)
-				log.Panic("incorrect tx1: Relayed is false but shard IDs do not match.")
-			}
-			if tx.Relayed && rsid != pphm.pbftNode.ShardID {
-				pphm.pbftNode.pl.Plog.Printf(
-					"[ERROR] Transaction relay shard ID mismatch: expected ShardID=%d, got ssid=%d, rsid=%d. Sender=%s, Recipient=%s, Relayed=%t",
-					pphm.pbftNode.ShardID, ssid, rsid, tx.Sender, tx.Recipient, tx.Relayed,
-				)
-				log.Panic("incorrect tx2: Relayed is true but recipient shard ID does not match.")
-			}
-			if rsid != pphm.pbftNode.ShardID {
-				relay1Txs = append(relay1Txs, tx)
-				tx.Relayed = true
-				// RelayPoolに追加
-				pphm.pbftNode.CurChain.Txpool.AddRelayTx(tx, rsid)
-			} else {
-				if tx.Relayed {
-					relay2Txs = append(relay2Txs, tx)
+			if !tx.IsTxProcessed {
+				ssid := pphm.pbftNode.CurChain.Get_PartitionMap(tx.Sender)
+				// TODO: Receipientがmergeされているか確認
+				rsid := pphm.pbftNode.CurChain.Get_PartitionMap(tx.Recipient)
+				if !tx.Relayed && ssid != pphm.pbftNode.ShardID {
+					pphm.pbftNode.pl.Plog.Printf(
+						"[ERROR] Transaction relay status mismatch: expected ShardID=%d, got ssid=%d, rsid=%d. Sender=%s, Recipient=%s, Relayed=%t",
+						pphm.pbftNode.ShardID, ssid, rsid, tx.Sender, tx.Recipient, tx.Relayed,
+					)
+					log.Panic("incorrect tx1: Relayed is false but shard IDs do not match.")
+				}
+				if tx.Relayed && rsid != pphm.pbftNode.ShardID {
+					pphm.pbftNode.pl.Plog.Printf(
+						"[ERROR] Transaction relay shard ID mismatch: expected ShardID=%d, got ssid=%d, rsid=%d. Sender=%s, Recipient=%s, Relayed=%t",
+						pphm.pbftNode.ShardID, ssid, rsid, tx.Sender, tx.Recipient, tx.Relayed,
+					)
+					log.Panic("incorrect tx2: Relayed is true but recipient shard ID does not match.")
+				}
+				if rsid != pphm.pbftNode.ShardID {
+					relay1Txs = append(relay1Txs, tx)
+					tx.Relayed = true
+					// RelayPoolに追加
+					pphm.pbftNode.CurChain.Txpool.AddRelayTx(tx, rsid)
 				} else {
-					innerShardTxs = append(innerShardTxs, tx)
+					if tx.Relayed {
+						relay2Txs = append(relay2Txs, tx)
+						tx.IsTxProcessed = true
+					} else {
+						innerShardTxs = append(innerShardTxs, tx)
+						tx.IsTxProcessed = true
+					}
 				}
 			}
+
+			//TODO: ここにInternal TXを持っている場合は追加の処理を書く
+			if tx.IsTxProcessed && tx.InternalTxs != nil {
+				// InternalTxsを処理する。すべてのInternalTxsのsenderとtoが同じシャードなら処理できたとみなす
+				// 違う場合はそのシャードに飛ばす必要がある。
+				startIdx := tx.LastItxProcessedIdx
+				endIdx := startIdx
+				processedCount := 0
+				for i := startIdx; i < uint(len(tx.InternalTxs)); i++ {
+					itx := tx.InternalTxs[i]
+
+					risid := pphm.pbftNode.CurChain.Get_PartitionMap(itx.Recipient)
+					sisid := pphm.pbftNode.CurChain.Get_PartitionMap(itx.Sender)
+					//　fromとpphm.pbftNode.ShardIDが同じか確認する
+					if sisid != pphm.pbftNode.ShardID && !itx.Relayed {
+						// pphm.pbftNode.pl.Plog.Println("1 AddInternalTx()。")
+						pphm.pbftNode.CurChain.Txpool.AddInternalTx(tx, sisid)
+						break
+					}
+
+					if !itx.Relayed && sisid != pphm.pbftNode.ShardID {
+						pphm.pbftNode.pl.Plog.Printf(
+							"[ERROR] Internal Transaction relay status mismatch: expected ShardID=%d, got sisid=%d, risid=%d. Sender=%s, Recipient=%s, Relayed=%t",
+							pphm.pbftNode.ShardID, sisid, risid, itx.Sender, itx.Recipient, itx.Relayed,
+						)
+						log.Panic("incorrect tx1: Relayed is false but shard IDs do not match.")
+					}
+					if itx.Relayed && risid != pphm.pbftNode.ShardID {
+						pphm.pbftNode.pl.Plog.Printf(
+							"[ERROR] Internal Transaction relay shard ID mismatch: expected ShardID=%d, got sisid=%d, risid=%d. Sender=%s, Recipient=%s, Relayed=%t",
+							pphm.pbftNode.ShardID, sisid, risid, itx.Sender, itx.Recipient, itx.Relayed,
+						)
+						log.Panic("incorrect tx2: Relayed is true but recipient shard ID does not match.")
+					}
+
+					// fromとpphm.pbftNode.ShardIDが同じことが前提にある
+					if risid != pphm.pbftNode.ShardID {
+						crossInternalTxs = append(crossInternalTxs, itx)
+						itx.Relayed = true
+						// InternalPoolに追加
+						pphm.pbftNode.CurChain.Txpool.AddInternalTx(tx, risid)
+						break
+					} else {
+						// このitxは処理できたものとする(senderとrecipientが同じシャードかつ現在のシャードとも一致する)
+						completedInternalTxs = append(completedInternalTxs, itx)
+						tx.LastItxProcessedIdx++
+						endIdx = i
+						processedCount++
+						continue
+					}
+				}
+				// ログの出力
+				if processedCount > 0 {
+					fmt.Printf("InternalTxs from %d to %d, Proceed: %d, LastIdx: %d, InternalTxs Count: %d, ParentTxHash: %s\n",
+						startIdx, endIdx, processedCount, tx.LastItxProcessedIdx, len(tx.InternalTxs), tx.InternalTxs[startIdx].ParentTxHash)
+				}
+			}
+
 		}
 
 		// send relay txs
@@ -143,6 +207,7 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 			pphm.pbftNode.RelayWithProofSend(block)
 		} else {
 			// RelayPoolを他のシャードに送信して、RelayPoolをクリア
+			// ここでInternal TXも送信する
 			pphm.pbftNode.RelayMsgSend()
 		}
 
@@ -155,6 +220,9 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 
 			Relay1Txs: relay1Txs,
 			Relay2Txs: relay2Txs,
+
+			CrossInternalTxs:     crossInternalTxs,
+			CompletedInternalTxs: completedInternalTxs,
 
 			SenderShardID: pphm.pbftNode.ShardID,
 			ProposeTime:   r.ReqTime,
@@ -174,9 +242,13 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 			"Block Height",
 			"EpochID of this block",
 			"TxPool Size",
+			// "TxPool Size of IsTxProcessed = false",
+			// "TxPool Size of IsTxProcessed = true",
 			"# of all Txs in this block",
 			"# of Relay1 Txs in this block",
 			"# of Relay2 Txs in this block",
+			// "Cross Internal Txs",
+			// "Completed Internal Txs",
 			"TimeStamp - Propose (unixMill)",
 			"TimeStamp - Commit (unixMill)",
 
@@ -188,9 +260,13 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 			strconv.Itoa(int(block.Header.Number)),
 			strconv.Itoa(bim.Epoch),
 			strconv.Itoa(len(pphm.pbftNode.CurChain.Txpool.TxQueue)),
+			// strconv.Itoa(len(pphm.pbftNode.CurChain.Txpool.TxQueue) - pphm.pbftNode.CurChain.Txpool.CountProcessedTxs()),
+			// strconv.Itoa(pphm.pbftNode.CurChain.Txpool.CountProcessedTxs()),
 			strconv.Itoa(len(block.Body)),
 			strconv.Itoa(len(relay1Txs)),
 			strconv.Itoa(len(relay2Txs)),
+			// strconv.Itoa(len(crossInternalTxs)),
+			// strconv.Itoa(len(completedInternalTxs)),
 			strconv.FormatInt(bim.ProposeTime.UnixMilli(), 10),
 			strconv.FormatInt(bim.CommitTime.UnixMilli(), 10),
 

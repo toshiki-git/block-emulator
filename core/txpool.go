@@ -4,24 +4,40 @@ package core
 
 import (
 	"blockEmulator/utils"
+	"fmt"
 	"sync"
 	"time"
 	"unsafe"
 )
 
 type TxPool struct {
-	TxQueue        []*Transaction                    // transaction Queue
-	RelayPool      map[uint64][]*Transaction         // designed for sharded blockchain, from Monoxide map[shardID] -> txs
-	InternalTxPool map[uint64][]*InternalTransaction // designed for sharded blockchain, from Monoxide. map[shardID] -> itxs
+	TxQueue        []*Transaction            // transaction Queue
+	RelayPool      map[uint64][]*Transaction // designed for sharded blockchain, from Monoxide map[shardID] -> txs
+	InternalTxPool map[uint64][]*Transaction // designed for sharded blockchain, from Monoxide. map[shardID] -> itxs
 	lock           sync.Mutex
 	// The pending list is ignored
 }
 
 func NewTxPool() *TxPool {
+	fmt.Println("NewTxPool")
 	return &TxPool{
-		TxQueue:   make([]*Transaction, 0),
-		RelayPool: make(map[uint64][]*Transaction),
+		TxQueue:        make([]*Transaction, 0),
+		RelayPool:      make(map[uint64][]*Transaction),
+		InternalTxPool: make(map[uint64][]*Transaction),
 	}
+}
+
+func (txpool *TxPool) CountProcessedTxs() int {
+	txpool.lock.Lock()
+	defer txpool.lock.Unlock()
+
+	processedTxsCount := 0
+	for _, tx := range txpool.TxQueue {
+		if tx.IsTxProcessed {
+			processedTxsCount++
+		}
+	}
+	return processedTxsCount
 }
 
 // Add a transaction to the pool (consider the queue only)
@@ -176,11 +192,15 @@ func (txpool *TxPool) TransferTxs(addr utils.Address) []*Transaction {
 func (txpool *TxPool) AddInternalTx(tx *Transaction, shardID uint64) {
 	txpool.lock.Lock()
 	defer txpool.lock.Unlock()
+	if txpool.InternalTxPool == nil {
+		fmt.Println("AddInternalTX(): InternalTxPoolを初期化します")
+		txpool.InternalTxPool = make(map[uint64][]*Transaction)
+	}
 	_, ok := txpool.InternalTxPool[shardID]
 	if !ok {
-		txpool.InternalTxPool[shardID] = make([]*InternalTransaction, 0)
+		txpool.InternalTxPool[shardID] = make([]*Transaction, 0)
 	}
-	txpool.InternalTxPool[shardID] = append(txpool.InternalTxPool[shardID], tx.InternalTxs...)
+	txpool.InternalTxPool[shardID] = append(txpool.InternalTxPool[shardID], tx)
 }
 
 func (txpool *TxPool) ClearInternalPool() {

@@ -114,19 +114,44 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 		firstPtr := 0
 		for secondPtr := 0; secondPtr < len(cphm.pbftNode.CurChain.Txpool.TxQueue); secondPtr++ {
 			ptx := cphm.pbftNode.CurChain.Txpool.TxQueue[secondPtr]
-			// if this is a normal transaction or ctx1 before re-sharding && the addr is correspond
-			// まだRelayedされてないときはSender側のシャードにTXを移動
-			_, ok1 := addrSet[ptx.Sender]
-			condition1 := ok1 && !ptx.Relayed
-			// if this tx is ctx2
-			// RelayedされているときはRecipient側のシャードにTXを移動
-			_, ok2 := addrSet[ptx.Recipient]
-			condition2 := ok2 && ptx.Relayed
-			if condition1 || condition2 {
-				txSend = append(txSend, ptx)
-			} else {
-				cphm.pbftNode.CurChain.Txpool.TxQueue[firstPtr] = ptx
-				firstPtr++
+
+			// Internal TXじゃないとき
+			if !ptx.IsTxProcessed {
+				// if this is a normal transaction or ctx1 before re-sharding && the addr is correspond
+				// まだRelayedされてないときはSender側のシャードにTXを移動
+				_, ok1 := addrSet[ptx.Sender]
+				condition1 := ok1 && !ptx.Relayed
+				// if this tx is ctx2
+				// RelayedされているときはRecipient側のシャードにTXを移動
+				_, ok2 := addrSet[ptx.Recipient]
+				condition2 := ok2 && ptx.Relayed
+				if condition1 || condition2 {
+					txSend = append(txSend, ptx)
+				} else {
+					cphm.pbftNode.CurChain.Txpool.TxQueue[firstPtr] = ptx
+					firstPtr++
+				}
+			}
+
+			// Internal TXのとき
+			if ptx.IsTxProcessed && ptx.InternalTxs != nil {
+				// if this is a normal transaction or ctx1 before re-sharding && the addr is correspond
+				// まだRelayedされてないときはSender側のシャードにTXを移動
+
+				InternalTxIdx := ptx.LastItxProcessedIdx
+				// fmt.Printf("sendAccounts_and_Txs(): %v \n", ptx.InternalTxs[InternalTxIdx])
+				_, ok1 := addrSet[ptx.InternalTxs[InternalTxIdx].Sender]
+				condition1 := ok1 && !ptx.InternalTxs[InternalTxIdx].Relayed
+				// if this tx is ctx2
+				// RelayedされているときはRecipient側のシャードにTXを移動
+				_, ok2 := addrSet[ptx.InternalTxs[InternalTxIdx].Recipient]
+				condition2 := ok2 && ptx.InternalTxs[InternalTxIdx].Relayed
+				if condition1 || condition2 {
+					txSend = append(txSend, ptx)
+				} else {
+					cphm.pbftNode.CurChain.Txpool.TxQueue[firstPtr] = ptx
+					firstPtr++
+				}
 			}
 		}
 		cphm.pbftNode.CurChain.Txpool.TxQueue = cphm.pbftNode.CurChain.Txpool.TxQueue[:firstPtr]
@@ -172,26 +197,65 @@ func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message
 	cphm.pbftNode.pl.Plog.Println("The number of ReceivedNewTx: ", len(cphm.cdm.ReceivedNewTx))
 	for _, tx := range cphm.cdm.ReceivedNewTx {
 		//TODO: ここで発生しているエラーを解消する
-		var sender string
-		if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.Sender]; ok {
-			sender = mergedVertex.Addr
-		} else {
-			sender = tx.Sender
+
+		// Internal TXじゃないとき
+		if !tx.IsTxProcessed {
+			var sender string
+			if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.Sender]; ok {
+				sender = mergedVertex.Addr
+			} else {
+				sender = tx.Sender
+			}
+
+			var recepient string
+			if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.Recipient]; ok {
+				recepient = mergedVertex.Addr
+			} else {
+				recepient = tx.Recipient
+			}
+
+			if !tx.Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][sender] != cphm.pbftNode.ShardID {
+				log.Panic("error tx: sender is not in the shard")
+			}
+			if tx.Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][recepient] != cphm.pbftNode.ShardID {
+				log.Panic("error tx: recipient is not in the shard")
+			}
 		}
 
-		var recepient string
-		if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.Recipient]; ok {
-			recepient = mergedVertex.Addr
-		} else {
-			recepient = tx.Recipient
+		if tx.IsTxProcessed && tx.InternalTxs != nil {
+			InternalTxIdx := tx.LastItxProcessedIdx
+			var iSender string
+			if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.InternalTxs[InternalTxIdx].Sender]; ok {
+				iSender = mergedVertex.Addr
+			} else {
+				iSender = tx.InternalTxs[InternalTxIdx].Sender
+			}
+
+			var iRecepient string
+			if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.InternalTxs[InternalTxIdx].Recipient]; ok {
+				iRecepient = mergedVertex.Addr
+			} else {
+				iRecepient = tx.InternalTxs[InternalTxIdx].Recipient
+			}
+
+			if !tx.InternalTxs[InternalTxIdx].Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][iSender] != cphm.pbftNode.ShardID {
+				cphm.pbftNode.pl.Plog.Printf(
+					"[ERROR] Internal Transaction relay status mismatch: expected ShardID=%d, got sisid=%d, risid=%d. Sender=%s, Recipient=%s, Relayed=%t",
+					cphm.pbftNode.ShardID, cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][iSender], cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][iRecepient], iSender, iRecepient, tx.InternalTxs[InternalTxIdx].Relayed,
+				)
+				cphm.pbftNode.pl.Plog.Println(tx.InternalTxs[InternalTxIdx].ParentTxHash)
+				log.Panic("error itx: sender is not in the shard")
+			}
+			if tx.InternalTxs[InternalTxIdx].Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][iRecepient] != cphm.pbftNode.ShardID {
+				cphm.pbftNode.pl.Plog.Printf(
+					"[ERROR] Internal Transaction relay shard ID mismatch: expected ShardID=%d, got sisid=%d, risid=%d. Sender=%s, Recipient=%s, Relayed=%t",
+					cphm.pbftNode.ShardID, cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][iSender], cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][iRecepient], iSender, iRecepient, tx.InternalTxs[InternalTxIdx].Relayed,
+				)
+				cphm.pbftNode.pl.Plog.Println(tx.InternalTxs[InternalTxIdx].ParentTxHash)
+				log.Panic("error itx: recipient is not in the shard")
+			}
 		}
 
-		if !tx.Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][sender] != cphm.pbftNode.ShardID {
-			log.Panic("error tx")
-		}
-		if tx.Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][recepient] != cphm.pbftNode.ShardID {
-			log.Panic("error tx")
-		}
 	}
 	cphm.pbftNode.CurChain.Txpool.AddTxs2Pool(cphm.cdm.ReceivedNewTx)
 	cphm.pbftNode.pl.Plog.Println("proposePartition(): The size of txpool: ", len(cphm.pbftNode.CurChain.Txpool.TxQueue))

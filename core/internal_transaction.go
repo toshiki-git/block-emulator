@@ -43,6 +43,7 @@ func NewInternalTransaction(sender, recipient, parentTxHash, typeTraceAddress st
 		Sender:              sender,
 		Recipient:           recipient,
 		Value:               value,
+		ParentTxHash:        parentTxHash,
 		Time:                proposeTime,
 		SenderIsContract:    senderIsContract,
 		RecipientIsContract: recipientIsContract,

@@ -116,12 +116,14 @@ func (p *PbftConsensusNode) RelayMsgSend() {
 		log.Panicf("Parameter Error: RelayWithMerkleProof should be 0, but RelayWithMerkleProof=%d", params.RelayWithMerkleProof)
 	}
 
+	txs := mergeTransactionMaps(p.CurChain.Txpool.RelayPool, p.CurChain.Txpool.InternalTxPool)
+
 	for sid := uint64(0); sid < p.pbftChainConfig.ShardNums; sid++ {
 		if sid == p.ShardID {
 			continue
 		}
 		relay := message.Relay{
-			Txs:           p.CurChain.Txpool.RelayPool[sid],
+			Txs:           txs[sid],
 			SenderShardID: p.ShardID,
 			SenderSeq:     p.sequenceID,
 		}
@@ -131,9 +133,27 @@ func (p *PbftConsensusNode) RelayMsgSend() {
 		}
 		msg_send := message.MergeMessage(message.CRelay, rByte)
 		go networks.TcpDial(msg_send, p.ip_nodeTable[sid][0])
-		p.pl.Plog.Printf("S%dN%d : sended relay txs to %d\n", p.ShardID, p.NodeID, sid)
+		p.pl.Plog.Printf("RelayMsgSend() : sended relay %d txs to %d\n", len(txs[sid]), sid)
 	}
 	p.CurChain.Txpool.ClearRelayPool()
+	p.CurChain.Txpool.ClearInternalPool()
+}
+
+func mergeTransactionMaps(map1, map2 map[uint64][]*core.Transaction) map[uint64][]*core.Transaction {
+	// 新しいマップを作成
+	mergedMap := make(map[uint64][]*core.Transaction)
+
+	// map1の内容をmergedMapにコピー
+	for key, transactions := range map1 {
+		mergedMap[key] = append(mergedMap[key], transactions...)
+	}
+
+	// map2の内容をmergedMapに追加
+	for key, transactions := range map2 {
+		mergedMap[key] = append(mergedMap[key], transactions...)
+	}
+
+	return mergedMap
 }
 
 // help to send RelayWithProof message to other shards.
