@@ -2,9 +2,12 @@ package pbft_all
 
 import (
 	"blockEmulator/consensus_shard/pbft_all/dataSupport"
+	"blockEmulator/core"
 	"blockEmulator/message"
+	"blockEmulator/networks"
 	"encoding/json"
 	"log"
+	"time"
 )
 
 // This module used in the blockChain using transaction relaying mechanism.
@@ -28,6 +31,15 @@ func (prom *ProposalRelayOutsideModule) HandleMessageOutsidePBFT(msgType message
 		prom.handleAccountStateAndTxMsg(content)
 	case message.CPartitionReady:
 		prom.handlePartitionReady(content)
+
+	// for smart contract
+	case message.CContractInject:
+		prom.handleContractInject(content) // supervisorから受け取る
+	case message.CContractRequest:
+		prom.handleCotractRequest(content) // ほかのshardから受け取る
+	case message.CContactResponse:
+		prom.handleContractResponse(content) // ほかのshardから受け取る(CContractRequestで追加されたtxがCommitされたときに呼び出される)
+
 	default:
 	}
 	return true
@@ -110,4 +122,234 @@ func (prom *ProposalRelayOutsideModule) handleAccountStateAndTxMsg(content []byt
 		prom.cdm.CollectLock.Unlock()
 		prom.pbftNode.pl.Plog.Printf("S%dN%d has added all accoutStateandTx~~~\n", prom.pbftNode.ShardID, prom.pbftNode.NodeID)
 	}
+}
+
+// SupervisorからコントラクトTxsを受け取って、初回の処理する
+func (prom *ProposalRelayOutsideModule) handleContractInject(content []byte) {
+	ci := new(message.ContractInjectTxs)
+	err := json.Unmarshal(content, ci)
+	if err != nil {
+		log.Panic()
+	}
+
+	// シャードごとのリクエストとTxPoolに追加するリストを処理
+	requestsByShard, innerTxList := prom.processContractInject(ci.Txs)
+
+	// シャードごとにリクエストを送信
+	prom.sendRequests(requestsByShard, message.CContractRequest)
+
+	// TxPoolにトランザクションを追加
+	if len(innerTxList) > 0 {
+		prom.pbftNode.CurChain.Txpool.AddTxs2Pool(innerTxList)
+	}
+}
+
+// ほかのシャードからのリクエストを処理する
+func (prom *ProposalRelayOutsideModule) handleCotractRequest(content []byte) {
+	csfreqList := []*message.CrossShardFunctionRequest{}
+	err := json.Unmarshal(content, csfreqList)
+	if err != nil {
+		log.Panic()
+	}
+
+	// シャードごとのリクエストとLeafトランザクションを処理
+	requestsByShard, leafTxs := prom.processContractRequests(csfreqList)
+
+	// Leaf ContractのトランザクションをTxPoolに追加
+	if len(leafTxs) > 0 {
+		prom.pbftNode.CurChain.Txpool.AddTxs2Pool(leafTxs)
+		prom.pbftNode.pl.Plog.Printf("%d 件のLeaf Contract用トランザクションをTxPoolに追加しました。\n", len(leafTxs))
+	}
+
+	// シャードごとにリクエストを送信
+	prom.sendRequests(requestsByShard, message.CContractRequest)
+	prom.pbftNode.pl.Plog.Printf("handleCotractRequest処理が完了しました。\n")
+}
+
+// コミットされたFuction Call Txsを処理する
+func (prom *ProposalRelayOutsideModule) handleContractResponse(content []byte) {
+	csfresList := []*message.CrossShardFunctionResponse{}
+	err := json.Unmarshal(content, csfresList)
+	if err != nil {
+		log.Panic()
+	}
+
+	// シャードごとのリクエストとTxPoolに追加するリストを処理
+	requestsByShard, txList := prom.processContractResponses(csfresList)
+
+	// TxPoolにトランザクションを追加
+	if len(txList) > 0 {
+		prom.pbftNode.CurChain.Txpool.AddTxs2Pool(txList)
+		prom.pbftNode.pl.Plog.Printf("TxPoolに %d 件のトランザクションを追加しました。\n", len(txList))
+	}
+
+	// シャードごとにリクエストを送信
+	prom.sendRequests(requestsByShard, message.CContractRequest)
+}
+
+// 共通関数: トランザクションの処理
+func (prom *ProposalRelayOutsideModule) processContractInject(txs []*core.Transaction) (map[uint64][]*message.CrossShardFunctionRequest, []*core.Transaction) {
+	requestsByShard := make(map[uint64][]*message.CrossShardFunctionRequest)
+	innerTxList := make([]*core.Transaction, 0)
+
+	for _, tx := range txs {
+		tx.CurrentCallNode = core.BuildExecutionCallTree(*tx)
+		differentShardNode, hasDiffShard := prom.DFS(tx.CurrentCallNode, true)
+
+		if hasDiffShard {
+			rsid := prom.pbftNode.CurChain.Get_PartitionMap(differentShardNode.Recipient)
+			csfreq := prom.createRequest(differentShardNode, rsid)
+			requestsByShard[rsid] = append(requestsByShard[rsid], csfreq)
+		} else {
+			innerTxList = append(innerTxList, tx)
+			prom.pbftNode.pl.Plog.Println("CrossShardFunctionがなく、シャード内で処理されるトランザクションでした。")
+		}
+	}
+
+	return requestsByShard, innerTxList
+}
+
+// 共通関数: リクエストの処理
+func (prom *ProposalRelayOutsideModule) processContractRequests(csfreqList []*message.CrossShardFunctionRequest) (map[uint64][]*message.CrossShardFunctionRequest, []*core.Transaction) {
+	requestsByShard := make(map[uint64][]*message.CrossShardFunctionRequest)
+	leafTxs := make([]*core.Transaction, 0)
+
+	for _, csfreq := range csfreqList {
+		if csfreq.CurrentCallNode.IsLeaf {
+			// Leafが見つかった場合、トランザクションを生成
+			tx := core.NewTransaction(csfreq.CurrentCallNode.Sender, csfreq.CurrentCallNode.Recipient, csfreq.CurrentCallNode.Value, 0, time.Now())
+			tx.IsCrossShardFuncCall = true
+			tx.HasContract = true
+			leafTxs = append(leafTxs, tx)
+		} else {
+			// Leafが見つかった場合、その子からDFSを開始
+			differentShardNode, hasDiffShard := prom.DFS(csfreq.CurrentCallNode, false)
+			if hasDiffShard {
+				rsid := prom.pbftNode.CurChain.Get_PartitionMap(differentShardNode.Recipient)
+				csfRequest := prom.createRequest(differentShardNode, rsid)
+				requestsByShard[rsid] = append(requestsByShard[rsid], csfRequest)
+			}
+		}
+	}
+
+	return requestsByShard, leafTxs
+}
+
+// 共通関数: レスポンスの処理
+func (prom *ProposalRelayOutsideModule) processContractResponses(csfrList []*message.CrossShardFunctionResponse) (map[uint64][]*message.CrossShardFunctionRequest, []*core.Transaction) {
+	requestsByShard := make(map[uint64][]*message.CrossShardFunctionRequest)
+	completedChildrenTxList := make([]*core.Transaction, 0)
+
+	for _, csfr := range csfrList {
+		differentShardNode, allChildrenProcessed := prom.DFS(csfr.CurrentCallNode, false)
+
+		if allChildrenProcessed {
+			tx := core.NewTransaction(csfr.CurrentCallNode.Sender, csfr.CurrentCallNode.Recipient, csfr.CurrentCallNode.Value, 0, time.Now())
+			tx.IsCrossShardFuncCall = true
+			tx.HasContract = true
+			completedChildrenTxList = append(completedChildrenTxList, tx)
+		} else if differentShardNode != nil {
+			rsid := prom.pbftNode.CurChain.Get_PartitionMap(differentShardNode.Recipient)
+			csfreq := prom.createRequest(differentShardNode, rsid)
+			requestsByShard[rsid] = append(requestsByShard[rsid], csfreq)
+		}
+	}
+
+	return requestsByShard, completedChildrenTxList
+}
+
+// 共通関数: リクエストの作成
+func (prom *ProposalRelayOutsideModule) createRequest(differentShardNode *core.CallNode, rsid uint64) *message.CrossShardFunctionRequest {
+	return &message.CrossShardFunctionRequest{
+		SourceShardID:      prom.pbftNode.ShardID,
+		DestinationShardID: rsid,
+		Sender:             differentShardNode.Sender,
+		Recepient:          differentShardNode.Recipient,
+		Value:              differentShardNode.Value,
+		ContractAddress:    differentShardNode.Recipient,
+		MethodSignature:    "execute",
+		Arguments:          []byte{0x01, 0x02, 0x03, 0x04},
+		RequestID:          "0x1234567890",
+		Timestamp:          time.Now().Unix(),
+		Signature:          "",
+		CurrentCallNode:    differentShardNode,
+	}
+}
+
+// 共通関数: リクエストの送信
+func (prom *ProposalRelayOutsideModule) sendRequests(requestsByShard map[uint64][]*message.CrossShardFunctionRequest, msgType message.MessageType) {
+	for sid, requests := range requestsByShard {
+		if sid == prom.pbftNode.ShardID {
+			prom.pbftNode.pl.Plog.Println("自分自身のシャードには送信しません。DFSの処理が正しく行われていない可能性があります。")
+			continue
+		}
+		rByte, err := json.Marshal(requests)
+		if err != nil {
+			log.Panic()
+		}
+		msg_send := message.MergeMessage(msgType, rByte)
+		go networks.TcpDial(msg_send, prom.pbftNode.ip_nodeTable[sid][0])
+		prom.pbftNode.pl.Plog.Printf("Shard %d にリクエストを %d 件送信しました。\n", sid, len(requests))
+	}
+}
+
+// 戻り値は、異なるシャードが見つかった場合の子を返す
+// A→Bを比較するとき、Bがかえって来る
+func (prom *ProposalRelayOutsideModule) DFS(root *core.CallNode, checkSelf bool) (*core.CallNode, bool) {
+	// 内部関数で再帰処理を定義
+	var dfsHelper func(node *core.CallNode) (*core.CallNode, bool)
+	dfsHelper = func(node *core.CallNode) (*core.CallNode, bool) {
+		if node == nil || node.IsProcessed { // IsProcessed が true のノードはスキップ
+			return nil, false
+		}
+
+		// senderとrecipientのシャードを取得
+		ssid := prom.pbftNode.CurChain.Get_PartitionMap(node.Sender)
+		rsid := prom.pbftNode.CurChain.Get_PartitionMap(node.Recipient)
+
+		// シャードが異なる場合、このノードとステータスを返す
+		if ssid != rsid {
+			return node, true
+		}
+
+		// 子ノードを再帰的に探索
+		allChildrenProcessed := true
+		for _, child := range node.Children {
+			result, found := dfsHelper(child)
+			if found {
+				return result, true // 異なるシャードが見つかった場合、処理を終了
+			}
+			// 子ノードが未処理の場合、フラグを false にする
+			if !child.IsProcessed {
+				allChildrenProcessed = false
+			}
+		}
+
+		// 戻り処理：すべての子ノードが処理済みの場合、このノードを処理済みにする
+		if allChildrenProcessed {
+			node.IsProcessed = true
+		}
+
+		// シャードが異なる部分が見つからなかった場合
+		return nil, false
+	}
+
+	// checkSelf の値に応じて探索範囲を決定
+	if checkSelf {
+		if result, found := dfsHelper(root); found {
+			return result, true
+		}
+		return root, false // シャードが異なる部分が見つからなかった場合に root を返す
+	}
+
+	// 子ノードのみを探索
+	for _, child := range root.Children {
+		result, found := dfsHelper(child)
+		if found {
+			return result, true
+		}
+	}
+
+	// シャードが異なる部分が見つからなかった場合に root を返す
+	return root, false
 }

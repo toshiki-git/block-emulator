@@ -168,10 +168,12 @@ func (pcm *ProposalCommitteeModule) data2txWithContract(data []string, nonce uin
 		}
 		tx := core.NewTransaction(from[2:], to[2:], val, nonce, time.Now())
 		// add internal transactions
-		tx.RecipientIsContract = true
+		tx.HasContract = true
 		if internalTxs, ok := pcm.internalTxMap[txHash]; ok {
 			tx.InternalTxs = internalTxs
 		}
+		// build treeこれはpbftノード側でやる
+		// tx.RootCallNode = utils.BuildExecutionCallTree(tx.TypeTraceAddresses())
 
 		if len(tx.InternalTxs) > 300 {
 			pcm.sl.Slog.Printf("Internal TXが多すぎます。txHash: %s, InternalTxs: %d\n", txHash, len(tx.InternalTxs))
@@ -422,6 +424,7 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	pcm.sl.Slog.Printf("グラフを更新開始 InnerShardTxs: %d txs, Relay2Txs: %d txs", len(b.InnerShardTxs), len(b.Relay2Txs))
 	pcm.processTransactions(b.InnerShardTxs)
 	pcm.processTransactions(b.Relay2Txs)
+	pcm.processTransactions(b.UnCompletedSCTxs)
 
 	duration := time.Since(start)
 	pcm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)

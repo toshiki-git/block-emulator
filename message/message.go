@@ -26,6 +26,11 @@ const (
 
 	CBlockInfo MessageType = "BlockInfo"
 	CSeqIDinfo MessageType = "SequenceID"
+
+	// for smart contract
+	CContractInject  MessageType = "contractInject"
+	CContractRequest MessageType = "contractRequest"
+	CContactResponse MessageType = "contractResponse"
 )
 
 var (
@@ -87,6 +92,11 @@ type InjectTxs struct {
 	ToShardID uint64
 }
 
+type ContractInjectTxs struct {
+	Txs       []*core.Transaction
+	ToShardID uint64
+}
+
 // data sent to the supervisor
 type BlockInfoMsg struct {
 	BlockBodyLength int
@@ -107,6 +117,7 @@ type BlockInfoMsg struct {
 
 	CrossInternalTxs     []*core.InternalTransaction // cross shard internal transactions
 	CompletedInternalTxs []*core.InternalTransaction // completed internal transactions
+	UnCompletedSCTxs     []*core.Transaction         // uncompleted SC transactions
 
 	// for CLPA
 	CLPAResult *partition.CLPAState

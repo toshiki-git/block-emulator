@@ -111,19 +111,19 @@ func computeTCL(txs []*core.Transaction, commitTS time.Time) int64 {
 }
 
 // help to send Relay message to other shards.
+
+// help to send Relay message to other shards.
 func (p *PbftConsensusNode) RelayMsgSend() {
 	if params.RelayWithMerkleProof != 0 {
 		log.Panicf("Parameter Error: RelayWithMerkleProof should be 0, but RelayWithMerkleProof=%d", params.RelayWithMerkleProof)
 	}
-
-	txs := mergeTransactionMaps(p.CurChain.Txpool.RelayPool, p.CurChain.Txpool.InternalTxPool)
 
 	for sid := uint64(0); sid < p.pbftChainConfig.ShardNums; sid++ {
 		if sid == p.ShardID {
 			continue
 		}
 		relay := message.Relay{
-			Txs:           txs[sid],
+			Txs:           p.CurChain.Txpool.RelayPool[sid],
 			SenderShardID: p.ShardID,
 			SenderSeq:     p.sequenceID,
 		}
@@ -133,27 +133,53 @@ func (p *PbftConsensusNode) RelayMsgSend() {
 		}
 		msg_send := message.MergeMessage(message.CRelay, rByte)
 		go networks.TcpDial(msg_send, p.ip_nodeTable[sid][0])
-		p.pl.Plog.Printf("RelayMsgSend() : sended relay %d txs to %d\n", len(txs[sid]), sid)
+		p.pl.Plog.Printf("S%dN%d : sended relay txs to %d\n", p.ShardID, p.NodeID, sid)
 	}
 	p.CurChain.Txpool.ClearRelayPool()
-	p.CurChain.Txpool.ClearInternalPool()
 }
 
-func mergeTransactionMaps(map1, map2 map[uint64][]*core.Transaction) map[uint64][]*core.Transaction {
-	// 新しいマップを作成
-	mergedMap := make(map[uint64][]*core.Transaction)
+func (p *PbftConsensusNode) CrossShardFunctionResponseMsgSend() {
+	// シャードごとにCrossShardFunctionResponseを格納するマップ
+	csfresByShard := make(map[uint64][]message.CrossShardFunctionResponse)
 
-	// map1の内容をmergedMapにコピー
-	for key, transactions := range map1 {
-		mergedMap[key] = append(mergedMap[key], transactions...)
+	// CrossShardFuncPoolからデータを取り出し、シャードごとに分割
+	for sid, txs := range p.CurChain.Txpool.CrossShardFuncPool {
+		for _, tx := range txs {
+			tx.CurrentCallNode.IsProcessed = true
+			csfres := message.CrossShardFunctionResponse{
+				SourceShardID:      p.ShardID,
+				DestinationShardID: sid,
+				RequestID:          "0x12345678901", // 適切なRequestIDを設定
+				StatusCode:         0,
+				ResultData:         []byte(""), // 必要なら適切な結果データを設定
+				Timestamp:          time.Now().Unix(),
+				Signature:          "",                        // 必要なら署名を設定
+				CurrentCallNode:    tx.CurrentCallNode.Parent, // 多分これでいい
+			}
+			csfresByShard[sid] = append(csfresByShard[sid], csfres)
+		}
 	}
 
-	// map2の内容をmergedMapに追加
-	for key, transactions := range map2 {
-		mergedMap[key] = append(mergedMap[key], transactions...)
+	// 各シャードにメッセージを送信
+	for sid, responses := range csfresByShard {
+		if sid == p.ShardID {
+			continue // 自分自身のシャードには送信しない
+		}
+
+		// メッセージをエンコード
+		rByte, err := json.Marshal(responses)
+		if err != nil {
+			log.Panic(err) // エラーがあれば停止
+		}
+
+		// メッセージを送信
+		msg_send := message.MergeMessage(message.CContactResponse, rByte)
+		go networks.TcpDial(msg_send, p.ip_nodeTable[sid][0]) // 非同期で送信
+		p.pl.Plog.Printf("S%dN%d : sent CrossShardFunctionResponses to shard %d\n", p.ShardID, p.NodeID, sid)
 	}
 
-	return mergedMap
+	// CrossShardFuncPoolをクリア
+	p.CurChain.Txpool.ClearCrossShardFuncPool()
 }
 
 // help to send RelayWithProof message to other shards.

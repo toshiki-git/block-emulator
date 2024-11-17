@@ -756,7 +756,7 @@ func data2txWithContract(data []string, internalTxMap map[string][]*core.Interna
 		}
 		tx := core.NewTransaction(from[2:], to[2:], val, 0, time.Now())
 		// add internal transactions
-		tx.RecipientIsContract = true
+		tx.HasContract = true
 		if internalTxs, ok := internalTxMap[txHash]; ok {
 			tx.InternalTxs = internalTxs
 		}

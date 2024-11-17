@@ -134,7 +134,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 			}
 
 			// Internal TXのとき
-			if ptx.IsTxProcessed && ptx.InternalTxs != nil {
+			if ptx.IsTxProcessed && ptx.HasContract {
 				// if this is a normal transaction or ctx1 before re-sharding && the addr is correspond
 				// まだRelayedされてないときはSender側のシャードにTXを移動
 
@@ -222,7 +222,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message
 			}
 		}
 
-		if tx.IsTxProcessed && tx.InternalTxs != nil {
+		if tx.IsTxProcessed && tx.HasContract {
 			InternalTxIdx := tx.LastItxProcessedIdx
 			var iSender string
 			if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.InternalTxs[InternalTxIdx].Sender]; ok {

@@ -193,7 +193,7 @@ func (pbcm *ProposalBrokerCommitteeModule) data2txWithContract(data []string, no
 		}
 		tx := core.NewTransaction(from[2:], to[2:], val, nonce, time.Now())
 		// add internal transactions
-		tx.RecipientIsContract = true
+		tx.HasContract = true
 		if internalTxs, ok := pbcm.internalTxMap[txHash]; ok {
 			tx.InternalTxs = internalTxs
 		}

@@ -33,10 +33,12 @@ type Transaction struct {
 	RawTxHash      []byte
 
 	// Fields for smart contract transactions
-	RecipientIsContract bool
-	InternalTxs         []*InternalTransaction
-	LastItxProcessedIdx uint
-	IsTxProcessed       bool
+	HasContract          bool
+	InternalTxs          []*InternalTransaction
+	LastItxProcessedIdx  uint
+	IsTxProcessed        bool
+	CurrentCallNode      *CallNode
+	IsCrossShardFuncCall bool
 }
 
 func (tx *Transaction) PrintTx() string {
@@ -76,6 +78,14 @@ func DecodeTx(to_decode []byte) *Transaction {
 	return &tx
 }
 
+func (tx *Transaction) TypeTraceAddresses() []string {
+	var addresses []string
+	for _, internalTx := range tx.InternalTxs {
+		addresses = append(addresses, internalTx.TypeTraceAddress)
+	}
+	return addresses
+}
+
 // new a transaction
 func NewTransaction(sender, recipient string, value *big.Int, nonce uint64, proposeTime time.Time) *Transaction {
 	tx := &Transaction{
@@ -94,5 +104,6 @@ func NewTransaction(sender, recipient string, value *big.Int, nonce uint64, prop
 	tx.RawTxHash = nil
 	tx.HasBroker = false
 	tx.SenderIsBroker = false
+	tx.CurrentCallNode = nil
 	return tx
 }
