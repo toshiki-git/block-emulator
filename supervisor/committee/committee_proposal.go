@@ -100,37 +100,79 @@ func (pcm *ProposalCommitteeModule) fetchModifiedMap(key string) uint64 {
 }
 
 func (pcm *ProposalCommitteeModule) txSending(txlist []*core.Transaction) {
-	// the txs will be sent
-	sendToShard := make(map[uint64][]*core.Transaction)
+	// シャードごとにトランザクションを分類
+	sendToShard := make(map[uint64][]*core.Transaction)         // HasContractがfalseの場合
+	contractSendToShard := make(map[uint64][]*core.Transaction) // HasContractがtrueの場合
 
 	for idx := 0; idx <= len(txlist); idx++ {
-		// InjectSpeedの倍数ごとに送信
+		// `InjectSpeed` の倍数ごと、または最後のトランザクションで送信
 		if idx > 0 && (idx%params.InjectSpeed == 0 || idx == len(txlist)) {
-			// send to shard
-			for sid := uint64(0); sid < uint64(params.ShardNum); sid++ {
-				it := message.InjectTxs{
-					Txs:       sendToShard[sid],
-					ToShardID: sid,
-				}
-				itByte, err := json.Marshal(it)
-				if err != nil {
-					log.Panic(err)
-				}
-				send_msg := message.MergeMessage(message.CInject, itByte)
-				// send to leader node
-				go networks.TcpDial(send_msg, pcm.IpNodeTable[sid][0])
-			}
+			// `CInject` メッセージの送信
+			pcm.sendInjectTransactions(sendToShard)
+			// `CContractInject` メッセージの送信
+			pcm.sendContractInjectTransactions(contractSendToShard)
+
+			// マップをリセット
 			sendToShard = make(map[uint64][]*core.Transaction)
+			contractSendToShard = make(map[uint64][]*core.Transaction)
+
 			time.Sleep(time.Second)
 		}
+
+		// 最後のトランザクション処理を終了
 		if idx == len(txlist) {
 			break
 		}
+
+		// トランザクションの送信先シャードを計算
 		tx := txlist[idx]
-		sendersid := pcm.fetchModifiedMap(tx.Sender)
-		sendToShard[sendersid] = append(sendToShard[sendersid], tx)
+		senderSid := pcm.fetchModifiedMap(tx.Sender)
+
+		// `HasContract` に応じて分類
+		if tx.HasContract {
+			contractSendToShard[senderSid] = append(contractSendToShard[senderSid], tx)
+		} else {
+			sendToShard[senderSid] = append(sendToShard[senderSid], tx)
+		}
 	}
+
 	pcm.sl.Slog.Println(len(txlist), "txs have been sent.")
+}
+
+// `CInject` 用のトランザクション送信
+func (pcm *ProposalCommitteeModule) sendInjectTransactions(sendToShard map[uint64][]*core.Transaction) {
+	for sid, txs := range sendToShard {
+		it := message.InjectTxs{
+			Txs:       txs,
+			ToShardID: sid,
+		}
+		itByte, err := json.Marshal(it)
+		if err != nil {
+			log.Panic(err)
+		}
+		sendMsg := message.MergeMessage(message.CInject, itByte)
+		// リーダーノードに送信
+		go networks.TcpDial(sendMsg, pcm.IpNodeTable[sid][0])
+		pcm.sl.Slog.Printf("Shard %d に %d 件の Inject トランザクションを送信しました。\n", sid, len(txs))
+	}
+}
+
+// `CContractInject` 用のトランザクション送信
+func (pcm *ProposalCommitteeModule) sendContractInjectTransactions(contractSendToShard map[uint64][]*core.Transaction) {
+	for sid, txs := range contractSendToShard {
+		cit := message.ContractInjectTxs{
+			Txs:       txs,
+			ToShardID: sid,
+		}
+		citByte, err := json.Marshal(cit)
+		if err != nil {
+			log.Panic(err)
+		}
+		sendMsg := message.MergeMessage(message.CContractInject, citByte)
+		// リーダーノードに送信
+		go networks.TcpDial(sendMsg, pcm.IpNodeTable[sid][0])
+		pcm.sl.Slog.Printf("Shard %d に %d 件の ContractInject トランザクションを送信しました。\n", sid, len(txs))
+	}
 }
 
 // 2者間の送金のTXだけではなく、スマートコントラクトTXも生成
@@ -421,10 +463,13 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	defer pcm.clpaLock.Unlock()
 
 	// コミットされたブロックでグラフを更新
-	pcm.sl.Slog.Printf("グラフを更新開始 InnerShardTxs: %d txs, Relay2Txs: %d txs", len(b.InnerShardTxs), len(b.Relay2Txs))
+	pcm.sl.Slog.Printf("グラフを更新開始 InnerShardTxs: %d txs, Relay2Txs: %d txs, CrossShardFuctionCallTxs: %d, InnerSCTxs: %d",
+		len(b.InnerShardTxs), len(b.Relay2Txs), len(b.CrossShardFunctionCall), len(b.InnerSCTxs))
+
 	pcm.processTransactions(b.InnerShardTxs)
 	pcm.processTransactions(b.Relay2Txs)
-	pcm.processTransactions(b.UnCompletedSCTxs)
+	pcm.processTransactions(b.CrossShardFunctionCall)
+	pcm.processTransactions(b.InnerSCTxs)
 
 	duration := time.Since(start)
 	pcm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)

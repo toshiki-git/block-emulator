@@ -111,13 +111,13 @@ type BlockInfoMsg struct {
 	Relay1Txs []*core.Transaction // relay1 transactions in chain first time
 	Relay2Txs []*core.Transaction // relay2 transactions in chain second time
 
+	// for smart contract
+	CrossShardFunctionCall []*core.Transaction // cross shard function call transactions
+	InnerSCTxs             []*core.Transaction // inner shard smart contract transactions
+
 	// for broker
 	Broker1Txs []*core.Transaction // cross transactions at first time by broker
 	Broker2Txs []*core.Transaction // cross transactions at second time by broker
-
-	CrossInternalTxs     []*core.InternalTransaction // cross shard internal transactions
-	CompletedInternalTxs []*core.InternalTransaction // completed internal transactions
-	UnCompletedSCTxs     []*core.Transaction         // uncompleted SC transactions
 
 	// for CLPA
 	CLPAResult *partition.CLPAState

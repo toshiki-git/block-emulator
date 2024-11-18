@@ -7,7 +7,6 @@ import (
 	"log"
 	"math/big"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -44,7 +43,7 @@ func LoadInternalTxsFromCSV(csvPath string) map[string][]*core.InternalTransacti
 		}
 
 		// バリデーション：typeTraceAddressが空でないか確認
-		typeTraceAddress := getTraceType(data[3])
+		typeTraceAddress := data[3]
 		if typeTraceAddress == "" {
 			log.Printf("Skipping row due to empty typeTraceAddress: %v", data)
 			continue
@@ -88,10 +87,4 @@ func LoadInternalTxsFromCSV(csvPath string) map[string][]*core.InternalTransacti
 		internalTxMap[parentTxHash] = append(internalTxMap[parentTxHash], internalTx)
 	}
 	return internalTxMap
-}
-
-func getTraceType(input string) string {
-	// "_"で分割して最初の要素を返す
-	parts := strings.Split(input, "_")
-	return parts[0]
 }
