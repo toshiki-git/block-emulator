@@ -167,7 +167,7 @@ func (bc *BlockChain) GetUpdateStatusTrie(txs []*core.Transaction) common.Hash {
 	rt, ns := st.Commit(false)
 
 	if ns == nil {
-		fmt.Println("nsはnilです。valueがすべて0なのでstateの更新はありません。GetUpdateStatusTrie()はretrueします")
+		fmt.Println("nsはnilです。valueがすべて0なのでstateの更新はありません。GetUpdateStatusTrie()はreturnします")
 		for i, tx := range txs {
 			fmt.Printf("tx %d: sender %s shard %d, recipient %s shard %d\n", i, tx.Sender, bc.Get_PartitionMap(tx.Sender), tx.Recipient, bc.Get_PartitionMap(tx.Recipient))
 		}

@@ -2,7 +2,9 @@ package core
 
 import (
 	"fmt"
+	"log"
 	"math/big"
+	"strconv"
 	"strings"
 )
 
@@ -10,7 +12,9 @@ import (
 type CallNode struct {
 	TypeTraceAddress string
 	Sender           string
+	SenderShardID    int
 	Recipient        string
+	RecipientShardID int
 	Value            *big.Int
 	Children         []*CallNode
 	Parent           *CallNode `json:"-"`
@@ -20,7 +24,16 @@ type CallNode struct {
 
 // BuildExecutionCallTree は与えられたトレースリストから呼び出しツリーを構築し、root ノードを返します
 func BuildExecutionCallTree(tx *Transaction) *CallNode {
-	root := &CallNode{TypeTraceAddress: "root", Sender: tx.Sender, Recipient: tx.Recipient, IsLeaf: false, IsProcessed: false}
+	root := &CallNode{
+		TypeTraceAddress: "root",
+		Sender:           tx.Sender,
+		SenderShardID:    Addr2Shard(tx.Sender),
+		Recipient:        tx.Recipient,
+		RecipientShardID: Addr2Shard(tx.Recipient),
+		Value:            tx.Value,
+		IsLeaf:           false,
+		IsProcessed:      false,
+	}
 	nodeMap := make(map[string]*CallNode)
 	nodeMap["root"] = root
 
@@ -49,7 +62,9 @@ func BuildExecutionCallTree(tx *Transaction) *CallNode {
 			newNode := &CallNode{
 				TypeTraceAddress: currentPath,
 				Sender:           itx.Sender,
+				SenderShardID:    Addr2Shard(itx.Sender),
 				Recipient:        itx.Recipient,
+				RecipientShardID: Addr2Shard(itx.Recipient),
 				Value:            itx.Value,
 				Parent:           current,
 				IsLeaf:           true, // 新しいノードは葉ノードとして作成
@@ -64,6 +79,64 @@ func BuildExecutionCallTree(tx *Transaction) *CallNode {
 	}
 
 	return root
+}
+
+func Addr2Shard(addr string) int {
+	last8_addr := addr
+	if len(last8_addr) > 8 {
+		last8_addr = last8_addr[len(last8_addr)-8:]
+	}
+	num, err := strconv.ParseUint(last8_addr, 16, 64)
+	if err != nil {
+		log.Panic(err)
+	}
+	return int(num) % 2
+}
+
+// TypeTraceAddressからノードを検索する
+func (node *CallNode) FindNodeByTTA(target string) *CallNode {
+	if node == nil {
+		return nil
+	}
+
+	// 現在のノードが目的の `TypeTraceAddress` を持っている場合
+	if node.TypeTraceAddress == target {
+		return node
+	}
+
+	// 子ノードを再帰的に探索
+	for _, child := range node.Children {
+		found := child.FindNodeByTTA(target)
+		if found != nil {
+			return found
+		}
+	}
+
+	// 見つからなかった場合
+	return nil
+}
+
+// TypeTraceAddressからノードの親を検索する
+func (node *CallNode) FindParentNodeByTTA(target string) *CallNode {
+	if node == nil {
+		return nil
+	}
+
+	// 子ノードを再帰的に探索
+	for _, child := range node.Children {
+		if child.TypeTraceAddress == target {
+			return node // 親ノードを返す
+		}
+
+		// 再帰的に探索
+		foundParent := child.FindParentNodeByTTA(target)
+		if foundParent != nil {
+			return foundParent
+		}
+	}
+
+	// 見つからなかった場合
+	return nil
 }
 
 func (node *CallNode) DFS() []*CallNode {
@@ -102,8 +175,8 @@ func (node *CallNode) PrintTree(level int) {
 		return
 	}
 	indent := strings.Repeat("  ", level)
-	fmt.Printf("%s%s Sender: %s, Recepient: %s IsLeaf: %t IsProceed: %t\n",
-		indent, node.TypeTraceAddress, node.Sender, node.Recipient, node.IsLeaf, node.IsProcessed)
+	fmt.Printf("%s%s Sender: %s %d, Recepient: %s %d IsLeaf: %t IsProceed: %t\n",
+		indent, node.TypeTraceAddress, node.Sender, node.SenderShardID, node.Recipient, node.RecipientShardID, node.IsLeaf, node.IsProcessed)
 	for _, child := range node.Children {
 		child.PrintTree(level + 1)
 	}

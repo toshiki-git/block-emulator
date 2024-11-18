@@ -37,8 +37,9 @@ type Transaction struct {
 	InternalTxs          []*InternalTransaction
 	LastItxProcessedIdx  uint
 	IsTxProcessed        bool
-	CurrentCallNode      *CallNode
+	RootCallNode         *CallNode
 	IsCrossShardFuncCall bool
+	TypeTraceAddress     string
 }
 
 func (tx *Transaction) PrintTx() string {
@@ -104,6 +105,6 @@ func NewTransaction(sender, recipient string, value *big.Int, nonce uint64, prop
 	tx.RawTxHash = nil
 	tx.HasBroker = false
 	tx.SenderIsBroker = false
-	tx.CurrentCallNode = nil
+	tx.RootCallNode = nil
 	return tx
 }

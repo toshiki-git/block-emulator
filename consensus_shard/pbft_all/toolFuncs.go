@@ -142,19 +142,51 @@ func (p *PbftConsensusNode) CrossShardFunctionResponseMsgSend() {
 	// シャードごとにCrossShardFunctionResponseを格納するマップ
 	csfresByShard := make(map[uint64][]message.CrossShardFunctionResponse)
 
+	if p.CurChain == nil || p.CurChain.Txpool == nil {
+		log.Panic("CurChain or Txpool is nil")
+	}
+
 	// CrossShardFuncPoolからデータを取り出し、シャードごとに分割
 	for sid, txs := range p.CurChain.Txpool.CrossShardFuncPool {
+		if txs == nil {
+			log.Printf("CrossShardFuncPool: sid=%d has nil transactions", sid)
+			continue
+		}
+
 		for _, tx := range txs {
-			tx.CurrentCallNode.IsProcessed = true
+			if tx == nil || tx.RootCallNode == nil {
+				log.Printf("Transaction or RootCallNode is nil for sid=%d", sid)
+				continue
+			}
+
+			currentCallNode := tx.RootCallNode.FindNodeByTTA(tx.TypeTraceAddress)
+			if currentCallNode == nil {
+				log.Printf("FindNodeByTTA: Node not found for TypeTraceAddress=%s", tx.TypeTraceAddress)
+				continue
+			}
+			// 処理済みフラグを立てる
+			currentCallNode.IsProcessed = true
+
+			fmt.Println("Commitされた後の結果")
+			fmt.Println("TypeTraceAddress: ", tx.TypeTraceAddress)
+			fmt.Printf("sender: %s, recipient: %s \n", tx.Sender, tx.Recipient)
+			fmt.Println("sid: ", sid)
+			tx.RootCallNode.PrintTree(0)
+
+			//子から親に結果を返す
 			csfres := message.CrossShardFunctionResponse{
 				SourceShardID:      p.ShardID,
 				DestinationShardID: sid,
+				Sender:             tx.Sender,
+				Recipient:          tx.Recipient,
+				Value:              tx.Value,
 				RequestID:          "0x12345678901", // 適切なRequestIDを設定
 				StatusCode:         0,
 				ResultData:         []byte(""), // 必要なら適切な結果データを設定
 				Timestamp:          time.Now().Unix(),
-				Signature:          "",                        // 必要なら署名を設定
-				CurrentCallNode:    tx.CurrentCallNode.Parent, // 多分これでいい
+				Signature:          "", // 必要なら署名を設定
+				RootCallNode:       tx.RootCallNode,
+				TypeTraceAddress:   tx.TypeTraceAddress, // 子のTypeTraceAddressをそのままコピー
 			}
 			csfresByShard[sid] = append(csfresByShard[sid], csfres)
 		}
@@ -166,6 +198,11 @@ func (p *PbftConsensusNode) CrossShardFunctionResponseMsgSend() {
 			continue // 自分自身のシャードには送信しない
 		}
 
+		if p.ip_nodeTable[sid] == nil || len(p.ip_nodeTable[sid]) == 0 {
+			log.Printf("ip_nodeTable: No nodes found for shard %d", sid)
+			continue
+		}
+
 		// メッセージをエンコード
 		rByte, err := json.Marshal(responses)
 		if err != nil {
@@ -175,7 +212,7 @@ func (p *PbftConsensusNode) CrossShardFunctionResponseMsgSend() {
 		// メッセージを送信
 		msg_send := message.MergeMessage(message.CContactResponse, rByte)
 		go networks.TcpDial(msg_send, p.ip_nodeTable[sid][0]) // 非同期で送信
-		p.pl.Plog.Printf("S%dN%d : sent CrossShardFunctionResponses to shard %d\n", p.ShardID, p.NodeID, sid)
+		p.pl.Plog.Printf("S%dN%d : CrossShardFunctionResponseの結果を返す shard %d に送信\n", p.ShardID, p.NodeID, sid)
 	}
 
 	// CrossShardFuncPoolをクリア

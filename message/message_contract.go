@@ -17,16 +17,21 @@ type CrossShardFunctionRequest struct {
 	RequestID          string   // リクエストを識別するためのID
 	Timestamp          int64    // リクエストが発生したタイムスタンプ
 	Signature          string   // リクエスト発信元の署名
-	CurrentCallNode    *core.CallNode
+	RootCallNode       *core.CallNode
+	TypeTraceAddress   string
 }
 
 type CrossShardFunctionResponse struct {
-	SourceShardID      uint64 // 応答を送信するシャードID
-	DestinationShardID uint64 // 応答の宛先となるシャードID（リクエストの発信元シャード）
-	RequestID          string // リクエストに対応するID
-	StatusCode         int    // 処理結果のステータスコード
-	ResultData         []byte // 処理結果のデータ
-	Timestamp          int64  // 応答が発生したタイムスタンプ
-	Signature          string // 応答内容の署名
-	CurrentCallNode    *core.CallNode
+	SourceShardID      uint64   // 応答を送信するシャードID
+	DestinationShardID uint64   // 応答の宛先となるシャードID（リクエストの発信元シャード）
+	Sender             string   // 応答発信元のアドレス
+	Recipient          string   // 応答の宛先となるコントラクトのアドレス
+	Value              *big.Int // 送金額
+	RequestID          string   // リクエストに対応するID
+	StatusCode         int      // 処理結果のステータスコード
+	ResultData         []byte   // 処理結果のデータ
+	Timestamp          int64    // 応答が発生したタイムスタンプ
+	Signature          string   // 応答内容の署名
+	RootCallNode       *core.CallNode
+	TypeTraceAddress   string
 }

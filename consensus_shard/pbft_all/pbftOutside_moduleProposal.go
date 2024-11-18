@@ -7,6 +7,7 @@ import (
 	"blockEmulator/networks"
 	"encoding/json"
 	"log"
+	"math/big"
 	"time"
 )
 
@@ -20,9 +21,9 @@ type ProposalRelayOutsideModule struct {
 func (prom *ProposalRelayOutsideModule) HandleMessageOutsidePBFT(msgType message.MessageType, content []byte) bool {
 	switch msgType {
 	case message.CRelay:
-		go prom.handleRelay(content)
+		prom.handleRelay(content)
 	case message.CInject:
-		go prom.handleInjectTx(content)
+		prom.handleInjectTx(content)
 
 	// messages about CLPA
 	case message.CPartitionMsg:
@@ -34,11 +35,11 @@ func (prom *ProposalRelayOutsideModule) HandleMessageOutsidePBFT(msgType message
 
 	// for smart contract
 	case message.CContractInject:
-		go prom.handleContractInject(content) // supervisorから受け取る
+		prom.handleContractInject(content) // supervisorから受け取る
 	case message.CContractRequest:
-		go prom.handleCotractRequest(content) // ほかのshardから受け取る
+		prom.handleCotractRequest(content) // ほかのshardから受け取る
 	case message.CContactResponse:
-		go prom.handleContractResponse(content) // ほかのshardから受け取る(CContractRequestで追加されたtxがCommitされたときに呼び出される)
+		prom.handleContractResponse(content) // ほかのshardから受け取る(CContractRequestで追加されたtxがCommitされたときに呼び出される)
 
 	default:
 	}
@@ -135,7 +136,6 @@ func (prom *ProposalRelayOutsideModule) handleContractInject(content []byte) {
 
 	// シャードごとのリクエストとTxPoolに追加するリストを処理
 	requestsByShard, innerTxList := prom.processContractInject(ci.Txs)
-	prom.pbftNode.pl.Plog.Printf("handleContractInject: シャードごとのリクエスト数: %d, TxPoolへの追加数: %d\n", len(requestsByShard), len(innerTxList))
 
 	// シャードごとにリクエストを送信
 	prom.sendRequests(requestsByShard, message.CContractRequest)
@@ -144,6 +144,8 @@ func (prom *ProposalRelayOutsideModule) handleContractInject(content []byte) {
 	if len(innerTxList) > 0 {
 		prom.pbftNode.CurChain.Txpool.AddTxs2Pool(innerTxList)
 		prom.pbftNode.pl.Plog.Printf("handleContractInject: %d 件のトランザクションをTxPoolに追加しました。\n", len(innerTxList))
+	} else {
+		prom.pbftNode.pl.Plog.Println("handleContractInject: TxPoolに追加するトランザクションがありませんでした。")
 	}
 	prom.pbftNode.pl.Plog.Println("handleContractInject: 終了")
 }
@@ -153,16 +155,23 @@ func (prom *ProposalRelayOutsideModule) processContractInject(txs []*core.Transa
 	innerTxList := make([]*core.Transaction, 0)
 
 	for _, tx := range txs {
-		tx.CurrentCallNode = core.BuildExecutionCallTree(tx)
+		tx.RootCallNode = core.BuildExecutionCallTree(tx)
 		prom.pbftNode.pl.Plog.Println(tx.InternalTxs[0].ParentTxHash, tx.InternalTxs[0].TypeTraceAddress, tx.InternalTxs[0].Sender, tx.InternalTxs[0].Recipient, tx.InternalTxs[0].Value)
 		prom.pbftNode.pl.Plog.Println("Treeを表示します")
-		tx.CurrentCallNode.PrintTree(0)
+		tx.RootCallNode.PrintTree(0)
 
-		differentShardNode, hasDiffShard := prom.DFS(tx.CurrentCallNode, true)
+		differentShardNode, hasDiffShard := prom.DFS(tx.RootCallNode, true)
 
 		if hasDiffShard {
 			rsid := prom.pbftNode.CurChain.Get_PartitionMap(differentShardNode.Recipient)
-			csfreq := prom.createRequest(differentShardNode, rsid)
+			csfreq := prom.createRequest(
+				tx.RootCallNode,
+				differentShardNode.Sender,
+				differentShardNode.Recipient,
+				differentShardNode.TypeTraceAddress,
+				rsid,
+				differentShardNode.Value,
+			)
 			requestsByShard[rsid] = append(requestsByShard[rsid], csfreq)
 		} else {
 			innerTxList = append(innerTxList, tx)
@@ -184,16 +193,17 @@ func (prom *ProposalRelayOutsideModule) handleCotractRequest(content []byte) {
 		log.Panic("handleCotractRequest: Unmarshal エラー", err)
 	}
 
-	prom.pbftNode.pl.Plog.Printf("handleCotractRequest: Shard %d から受信したリクエスト数: %d\n", csfreqList[0].SourceShardID, len(csfreqList))
+	prom.pbftNode.pl.Plog.Printf("handleCotractRequest: %d 件のリクエストを受信しました。\n", len(csfreqList))
 
 	// シャードごとのリクエストとLeafトランザクションを処理
 	requestsByShard, leafTxs := prom.processContractRequests(csfreqList)
-	prom.pbftNode.pl.Plog.Printf("handleCotractRequest: シャードごとのリクエスト数: %d, Leaf Tx数: %d\n", len(requestsByShard), len(leafTxs))
 
 	// Leaf ContractのトランザクションをTxPoolに追加
 	if len(leafTxs) > 0 {
 		prom.pbftNode.CurChain.Txpool.AddTxs2Pool(leafTxs)
 		prom.pbftNode.pl.Plog.Printf("handleCotractRequest: %d 件のLeaf Contract用トランザクションをTxPoolに追加しました。\n", len(leafTxs))
+	} else {
+		prom.pbftNode.pl.Plog.Println("handleCotractRequest: Leaf Contract用トランザクションがありませんでした。")
 	}
 
 	// シャードごとにリクエストを送信
@@ -203,39 +213,40 @@ func (prom *ProposalRelayOutsideModule) handleCotractRequest(content []byte) {
 
 // 共通関数: リクエストの処理
 func (prom *ProposalRelayOutsideModule) processContractRequests(csfreqList []*message.CrossShardFunctionRequest) (map[uint64][]*message.CrossShardFunctionRequest, []*core.Transaction) {
-	prom.pbftNode.pl.Plog.Println("processContractRequests: 開始")
 	requestsByShard := make(map[uint64][]*message.CrossShardFunctionRequest)
 	leafTxs := make([]*core.Transaction, 0)
 
-	childrenNilCount := 0
 	for _, csfreq := range csfreqList {
-		if csfreq.CurrentCallNode.Children == nil {
-			childrenNilCount++
+		currentCallNode := csfreq.RootCallNode.FindNodeByTTA(csfreq.TypeTraceAddress)
+		if currentCallNode == nil {
+			log.Panic("processContractRequests: currentCallNode が nil です。")
 		}
-	}
-	prom.pbftNode.pl.Plog.Printf("processContractRequests: Childrenがnilの数: %d\n", childrenNilCount)
 
-	for _, csfreq := range csfreqList {
-		if csfreq.CurrentCallNode.IsLeaf {
+		if currentCallNode.IsLeaf {
 			// Leafが見つかった場合、トランザクションを生成
-			tx := core.NewTransaction(csfreq.CurrentCallNode.Sender, csfreq.CurrentCallNode.Recipient, csfreq.CurrentCallNode.Value, 0, time.Now())
+			tx := core.NewTransaction(csfreq.Sender, csfreq.Recepient, csfreq.Value, 0, time.Now())
 			tx.IsCrossShardFuncCall = true
 			tx.HasContract = true
-			tx.CurrentCallNode = csfreq.CurrentCallNode
+			tx.RootCallNode = csfreq.RootCallNode
+			tx.TypeTraceAddress = csfreq.TypeTraceAddress // LeafのTypeTraceAddressを設定
 			leafTxs = append(leafTxs, tx)
 		} else {
-			// Leafが見つかった場合、その子からDFSを開始
-			differentShardNode, hasDiffShard := prom.DFS(csfreq.CurrentCallNode, false)
+			// Leafが見つからない場合、その子からDFSを開始
+			differentShardNode, hasDiffShard := prom.DFS(currentCallNode, false)
 			// prom.pbftNode.pl.Plog.Printf("processContractRequests: hasDiffShard: %v\n", hasDiffShard)
 			if hasDiffShard {
 				rsid := prom.pbftNode.CurChain.Get_PartitionMap(differentShardNode.Recipient)
-				csfRequest := prom.createRequest(differentShardNode, rsid)
+				csfRequest := prom.createRequest(
+					csfreq.RootCallNode,
+					differentShardNode.Sender,
+					differentShardNode.Recipient,
+					differentShardNode.TypeTraceAddress,
+					rsid,
+					differentShardNode.Value)
 				requestsByShard[rsid] = append(requestsByShard[rsid], csfRequest)
 			}
 		}
 	}
-	prom.pbftNode.pl.Plog.Printf("processContractRequests: シャードごとのリクエスト数: %d, Leaf Tx数: %d\n", len(requestsByShard), len(leafTxs))
-	prom.pbftNode.pl.Plog.Println("processContractRequests: 終了")
 	return requestsByShard, leafTxs
 }
 
@@ -248,14 +259,17 @@ func (prom *ProposalRelayOutsideModule) handleContractResponse(content []byte) {
 		log.Panic("handleContractResponse: Unmarshal エラー", err)
 	}
 
+	prom.pbftNode.pl.Plog.Printf("handleContractResponse: %d 件のリクエストを受信しました。\n", len(csfresList))
+
 	// シャードごとのリクエストとTxPoolに追加するリストを処理
 	requestsByShard, txList := prom.processContractResponses(csfresList)
-	prom.pbftNode.pl.Plog.Printf("handleContractResponse: シャードごとのリクエスト数: %d, TxPoolへの追加数: %d\n", len(requestsByShard), len(txList))
 
 	// TxPoolにトランザクションを追加
 	if len(txList) > 0 {
 		prom.pbftNode.CurChain.Txpool.AddTxs2Pool(txList)
 		prom.pbftNode.pl.Plog.Printf("handleContractResponse: TxPoolに %d 件のトランザクションを追加しました。\n", len(txList))
+	} else {
+		prom.pbftNode.pl.Plog.Println("handleContractResponse: TxPoolに追加するトランザクションがありませんでした。")
 	}
 
 	// シャードごとにリクエストを送信
@@ -264,22 +278,38 @@ func (prom *ProposalRelayOutsideModule) handleContractResponse(content []byte) {
 }
 
 // 共通関数: レスポンスの処理
-func (prom *ProposalRelayOutsideModule) processContractResponses(csfrList []*message.CrossShardFunctionResponse) (map[uint64][]*message.CrossShardFunctionRequest, []*core.Transaction) {
+func (prom *ProposalRelayOutsideModule) processContractResponses(csfresList []*message.CrossShardFunctionResponse) (map[uint64][]*message.CrossShardFunctionRequest, []*core.Transaction) {
 	requestsByShard := make(map[uint64][]*message.CrossShardFunctionRequest)
 	completedChildrenTxList := make([]*core.Transaction, 0)
 
-	for _, csfr := range csfrList {
-		differentShardNode, allChildrenProcessed := prom.DFS(csfr.CurrentCallNode, false)
+	for _, csfres := range csfresList {
+		currentCallNode := csfres.RootCallNode.FindParentNodeByTTA(csfres.TypeTraceAddress)
 
-		if allChildrenProcessed {
-			tx := core.NewTransaction(csfr.CurrentCallNode.Sender, csfr.CurrentCallNode.Recipient, csfr.CurrentCallNode.Value, 0, time.Now())
+		if currentCallNode == nil {
+			log.Panic("processContractResponses: currentCallNode が nil です。")
+		}
+
+		differentShardNode, hasDiffShard := prom.DFS(currentCallNode, false)
+
+		if !hasDiffShard {
+			prom.pbftNode.pl.Plog.Println("processContractResponses: hasDiffShard が false です。")
+			tx := core.NewTransaction(currentCallNode.Sender, currentCallNode.Recipient, currentCallNode.Value, 0, time.Now())
 			tx.IsCrossShardFuncCall = true
 			tx.HasContract = true
-			tx.CurrentCallNode = csfr.CurrentCallNode
+			tx.RootCallNode = csfres.RootCallNode
+			tx.TypeTraceAddress = currentCallNode.TypeTraceAddress //ここで現在のTypeTraceAddressを設定
 			completedChildrenTxList = append(completedChildrenTxList, tx)
 		} else if differentShardNode != nil {
+			prom.pbftNode.pl.Plog.Println("processContractResponses: hasDiffShard が true です。")
 			rsid := prom.pbftNode.CurChain.Get_PartitionMap(differentShardNode.Recipient)
-			csfreq := prom.createRequest(differentShardNode, rsid)
+			csfreq := prom.createRequest(
+				csfres.RootCallNode,
+				differentShardNode.Sender,
+				differentShardNode.Recipient,
+				differentShardNode.TypeTraceAddress,
+				rsid,
+				differentShardNode.Value,
+			)
 			requestsByShard[rsid] = append(requestsByShard[rsid], csfreq)
 		}
 	}
@@ -288,20 +318,21 @@ func (prom *ProposalRelayOutsideModule) processContractResponses(csfrList []*mes
 }
 
 // 共通関数: リクエストの作成
-func (prom *ProposalRelayOutsideModule) createRequest(differentShardNode *core.CallNode, rsid uint64) *message.CrossShardFunctionRequest {
+func (prom *ProposalRelayOutsideModule) createRequest(rootCallNode *core.CallNode, sender, recipient, typeTraceAddress string, rsid uint64, value *big.Int) *message.CrossShardFunctionRequest {
 	return &message.CrossShardFunctionRequest{
 		SourceShardID:      prom.pbftNode.ShardID,
 		DestinationShardID: rsid,
-		Sender:             differentShardNode.Sender,
-		Recepient:          differentShardNode.Recipient,
-		Value:              differentShardNode.Value,
-		ContractAddress:    differentShardNode.Recipient,
+		Sender:             sender,
+		Recepient:          recipient,
+		Value:              value,
+		ContractAddress:    recipient,
 		MethodSignature:    "execute",
 		Arguments:          []byte{0x01, 0x02, 0x03, 0x04},
 		RequestID:          "0x1234567890",
 		Timestamp:          time.Now().Unix(),
 		Signature:          "",
-		CurrentCallNode:    differentShardNode,
+		RootCallNode:       rootCallNode,
+		TypeTraceAddress:   typeTraceAddress,
 	}
 }
 
@@ -318,7 +349,7 @@ func (prom *ProposalRelayOutsideModule) sendRequests(requestsByShard map[uint64]
 		}
 		msg_send := message.MergeMessage(msgType, rByte)
 		go networks.TcpDial(msg_send, prom.pbftNode.ip_nodeTable[sid][0])
-		prom.pbftNode.pl.Plog.Printf("sendRequests: Shard %d にリクエストを %d 件送信しました。\n", sid, len(requests))
+		prom.pbftNode.pl.Plog.Printf("sendRequests(%s): Shard %d にリクエストを %d 件送信しました。\n", msgType, sid, len(requests))
 	}
 }
 
@@ -326,6 +357,7 @@ func (prom *ProposalRelayOutsideModule) sendRequests(requestsByShard map[uint64]
 // A→Bを比較するとき、Bがかえって来る
 // 戻り値は、異なるシャードが見つかった場合の子を返す
 // A→Bを比較するとき、Bがかえって来る
+// 第2戻り値は異なるシャードが見つかった場合はtrue、見つからなかった場合はfalse
 func (prom *ProposalRelayOutsideModule) DFS(root *core.CallNode, checkSelf bool) (*core.CallNode, bool) {
 	// 内部関数で再帰処理を定義
 	var dfsHelper func(node *core.CallNode) (*core.CallNode, bool)
