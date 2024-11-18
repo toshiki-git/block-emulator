@@ -214,6 +214,10 @@ func (txpool *TxPool) ClearInternalPool() {
 func (txpool *TxPool) AddCrossShardFuncTx(tx *Transaction, shardID uint64) {
 	txpool.lock.Lock()
 	defer txpool.lock.Unlock()
+	if txpool.CrossShardFuncPool == nil {
+		fmt.Println("AddCrossShardFuncTx(): CrossShardFuncPoolを初期化します")
+		txpool.CrossShardFuncPool = make(map[uint64][]*Transaction)
+	}
 	_, ok := txpool.CrossShardFuncPool[shardID]
 	if !ok {
 		txpool.CrossShardFuncPool[shardID] = make([]*Transaction, 0)

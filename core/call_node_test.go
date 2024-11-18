@@ -36,7 +36,7 @@ func Test_Step(t *testing.T) {
 	}
 
 	// 呼び出しツリーの構築
-	root := BuildExecutionCallTree(tx)
+	root := BuildExecutionCallTree(&tx)
 	fmt.Println("=== Call Tree ===")
 	root.PrintTree(0)
 
@@ -90,8 +90,8 @@ func (node *CallNode) writeDotFile(file *os.File) {
 	}
 
 	// ノード情報の書き込み
-	fmt.Fprintf(file, "  \"%s\" [label=\"%s\\nSender: %s\\nRecipient: %s\"];\n",
-		node.TypeTraceAddress, node.TypeTraceAddress, node.Sender, node.Recipient)
+	fmt.Fprintf(file, "  \"%s\" [label=\"%s\\nSender: %s\\nRecipient: %s\\nIsLeaf: %t\"];\n",
+		node.TypeTraceAddress, node.TypeTraceAddress, node.Sender, node.Recipient, node.IsLeaf)
 
 	// エッジ情報の書き込み
 	for _, child := range node.Children {

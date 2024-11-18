@@ -147,13 +147,17 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 
 			//TODO: ここにInternal TXを持っている場合は追加の処理を書く
 			if tx.HasContract {
+				pphm.pbftNode.pl.Plog.Println("HasContractの処理を行います。")
 				if tx.IsCrossShardFuncCall {
-					ssid = pphm.pbftNode.CurChain.Get_PartitionMap(tx.CurrentCallNode.Sender)
+					pphm.pbftNode.pl.Plog.Println("CrossShardFunctionCallの処理を行います。")
+					tx.CurrentCallNode.PrintTree(0)
+					ssid = pphm.pbftNode.CurChain.Get_PartitionMap(tx.Sender)
 					crossShardFunctionCall = append(crossShardFunctionCall, tx)
 					// TODO: ssidが正しいか検証
 					pphm.pbftNode.CurChain.Txpool.AddCrossShardFuncTx(tx, ssid)
 				} else {
 					// Internal TXを持つがすべて同じshard内で完結(txも含め)する場合
+					pphm.pbftNode.pl.Plog.Println("InnerSCの処理を行います。")
 					innerSCTxs = append(innerSCTxs, tx)
 				}
 			}
@@ -200,13 +204,14 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 			"Block Height",
 			"EpochID of this block",
 			"TxPool Size",
-			// "TxPool Size of IsTxProcessed = false",
-			// "TxPool Size of IsTxProcessed = true",
 			"# of all Txs in this block",
+
 			"# of Relay1 Txs in this block",
 			"# of Relay2 Txs in this block",
-			// "Cross Internal Txs",
-			// "Completed Internal Txs",
+
+			"Cross Shard Function Call Txs",
+			"Inner SC Txs",
+
 			"TimeStamp - Propose (unixMill)",
 			"TimeStamp - Commit (unixMill)",
 
@@ -218,13 +223,14 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 			strconv.Itoa(int(block.Header.Number)),
 			strconv.Itoa(bim.Epoch),
 			strconv.Itoa(len(pphm.pbftNode.CurChain.Txpool.TxQueue)),
-			// strconv.Itoa(len(pphm.pbftNode.CurChain.Txpool.TxQueue) - pphm.pbftNode.CurChain.Txpool.CountProcessedTxs()),
-			// strconv.Itoa(pphm.pbftNode.CurChain.Txpool.CountProcessedTxs()),
 			strconv.Itoa(len(block.Body)),
+
 			strconv.Itoa(len(relay1Txs)),
 			strconv.Itoa(len(relay2Txs)),
-			// strconv.Itoa(len(crossInternalTxs)),
-			// strconv.Itoa(len(completedInternalTxs)),
+
+			strconv.Itoa(len(crossShardFunctionCall)),
+			strconv.Itoa(len(innerSCTxs)),
+
 			strconv.FormatInt(bim.ProposeTime.UnixMilli(), 10),
 			strconv.FormatInt(bim.CommitTime.UnixMilli(), 10),
 

@@ -13,13 +13,13 @@ type CallNode struct {
 	Recipient        string
 	Value            *big.Int
 	Children         []*CallNode
-	Parent           *CallNode
-	IsLeaf           bool // 葉ノードかどうかを示すフラグ
-	IsProcessed      bool // 処理済みかどうかを示すフラグ
+	Parent           *CallNode `json:"-"`
+	IsLeaf           bool      // 葉ノードかどうかを示すフラグ
+	IsProcessed      bool      // 処理済みかどうかを示すフラグ
 }
 
 // BuildExecutionCallTree は与えられたトレースリストから呼び出しツリーを構築し、root ノードを返します
-func BuildExecutionCallTree(tx Transaction) *CallNode {
+func BuildExecutionCallTree(tx *Transaction) *CallNode {
 	root := &CallNode{TypeTraceAddress: "root", Sender: tx.Sender, Recipient: tx.Recipient, IsLeaf: false, IsProcessed: false}
 	nodeMap := make(map[string]*CallNode)
 	nodeMap["root"] = root
@@ -102,7 +102,8 @@ func (node *CallNode) PrintTree(level int) {
 		return
 	}
 	indent := strings.Repeat("  ", level)
-	fmt.Printf("%s%s Sender: %s, Recepient: %s (IsLeaf: %v) IsProceed: %t\n", indent, node.TypeTraceAddress, node.Sender, node.Recipient, node.IsLeaf, node.IsProcessed)
+	fmt.Printf("%s%s Sender: %s, Recepient: %s IsLeaf: %t IsProceed: %t\n",
+		indent, node.TypeTraceAddress, node.Sender, node.Recipient, node.IsLeaf, node.IsProcessed)
 	for _, child := range node.Children {
 		child.PrintTree(level + 1)
 	}

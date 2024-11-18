@@ -219,9 +219,6 @@ func (p *PbftConsensusNode) handleMessage(msg []byte) {
 	case message.CSendOldrequest:
 		p.handleSendOldSeq(content)
 
-	// for smart contract
-	case message.CInject:
-
 	case message.CStop:
 		p.WaitToStop()
 
