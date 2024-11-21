@@ -219,6 +219,7 @@ func (pcm *ProposalCommitteeModule) data2txWithContract(data []string, nonce uin
 
 		if len(tx.InternalTxs) > 300 {
 			pcm.sl.Slog.Printf("Internal TXが多すぎます。txHash: %s, InternalTxs: %d\n", txHash, len(tx.InternalTxs))
+			//return &core.Transaction{}, false
 		}
 		return tx, true
 	}

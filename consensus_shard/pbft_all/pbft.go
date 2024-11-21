@@ -160,13 +160,22 @@ func NewPbftNode(shardID, nodeID uint64, pcc *params.ChainConfig, messageHandleT
 		}
 	case "Proposal": // TODO: ProposalRelay
 		ncdm := dataSupport.NewCLPADataSupport()
+		ncfcpm := dataSupport.NewCrossFunctionCallPoolManager()
 		p.ihm = &ProposalPbftInsideExtraHandleMod{
 			pbftNode: p,
 			cdm:      ncdm,
+			cfcpm:    ncfcpm,
 		}
 		p.ohm = &ProposalRelayOutsideModule{
 			pbftNode: p,
 			cdm:      ncdm,
+			cfcpm:    ncfcpm,
+		}
+
+		if ohmModule, ok := p.ohm.(*ProposalRelayOutsideModule); ok {
+			if uint64(p.view.Load()) == p.NodeID {
+				go ohmModule.StartBatchProcessing(2000, 100*time.Millisecond) //TODO: jsonで管理
+			}
 		}
 	case "ProposalBroker":
 		ncdm := dataSupport.NewCLPADataSupport()

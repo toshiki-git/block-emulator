@@ -10,7 +10,8 @@ import (
 
 // CallNode はスマートコントラクトの呼び出しノードを表します
 type CallNode struct {
-	TypeTraceAddress string
+	TypeTraceAddress string // ex: "0" "0_1", "0_1_0" ...
+	CallType         string // ex: "call", "staticcall", "delegatecall", "create"
 	Sender           string
 	SenderShardID    int
 	Recipient        string
@@ -23,16 +24,17 @@ type CallNode struct {
 }
 
 // BuildExecutionCallTree は与えられたトレースリストから呼び出しツリーを構築し、root ノードを返します
-func BuildExecutionCallTree(tx *Transaction) *CallNode {
+func BuildExecutionCallTree(tx *Transaction, processedMap map[string]bool) *CallNode {
 	root := &CallNode{
 		TypeTraceAddress: "root",
+		CallType:         "root",
 		Sender:           tx.Sender,
 		SenderShardID:    Addr2Shard(tx.Sender),
 		Recipient:        tx.Recipient,
 		RecipientShardID: Addr2Shard(tx.Recipient),
 		Value:            tx.Value,
 		IsLeaf:           false,
-		IsProcessed:      false,
+		IsProcessed:      processedMap["root"], // root の処理状況を設定
 	}
 	nodeMap := make(map[string]*CallNode)
 	nodeMap["root"] = root
@@ -61,14 +63,15 @@ func BuildExecutionCallTree(tx *Transaction) *CallNode {
 
 			newNode := &CallNode{
 				TypeTraceAddress: currentPath,
+				CallType:         parts[0],
 				Sender:           itx.Sender,
 				SenderShardID:    Addr2Shard(itx.Sender),
 				Recipient:        itx.Recipient,
 				RecipientShardID: Addr2Shard(itx.Recipient),
 				Value:            itx.Value,
 				Parent:           current,
-				IsLeaf:           true, // 新しいノードは葉ノードとして作成
-				IsProcessed:      false,
+				IsLeaf:           true,                      // 新しいノードは葉ノードとして作成
+				IsProcessed:      processedMap[currentPath], // processedAddresses に一致する場合 true に設定
 			}
 			// 親ノードは葉ノードでなくなる
 			current.IsLeaf = false
@@ -120,6 +123,11 @@ func (node *CallNode) FindNodeByTTA(target string) *CallNode {
 func (node *CallNode) FindParentNodeByTTA(target string) *CallNode {
 	if node == nil {
 		return nil
+	}
+
+	// 現在のノードが目的の `TypeTraceAddress` を持っている場合
+	if node.TypeTraceAddress == target {
+		return node
 	}
 
 	// 子ノードを再帰的に探索
@@ -175,8 +183,8 @@ func (node *CallNode) PrintTree(level int) {
 		return
 	}
 	indent := strings.Repeat("  ", level)
-	fmt.Printf("%s%s Sender: %s %d, Recepient: %s %d IsLeaf: %t IsProceed: %t\n",
-		indent, node.TypeTraceAddress, node.Sender, node.SenderShardID, node.Recipient, node.RecipientShardID, node.IsLeaf, node.IsProcessed)
+	fmt.Printf("%s%s_%s Sender: %s %d, Recepient: %s %d IsLeaf: %t IsProceed: %t\n",
+		indent, node.CallType, node.TypeTraceAddress, node.Sender, node.SenderShardID, node.Recipient, node.RecipientShardID, node.IsLeaf, node.IsProcessed)
 	for _, child := range node.Children {
 		child.PrintTree(level + 1)
 	}

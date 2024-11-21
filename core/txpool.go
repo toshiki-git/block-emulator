@@ -11,21 +11,19 @@ import (
 )
 
 type TxPool struct {
-	TxQueue            []*Transaction            // transaction Queue
-	RelayPool          map[uint64][]*Transaction // designed for sharded blockchain, from Monoxide map[shardID] -> txs
-	InternalTxPool     map[uint64][]*Transaction // designed for sharded blockchain, from Monoxide. map[shardID] -> itxs
-	CrossShardFuncPool map[uint64][]*Transaction // designed for sharded blockchain, from Monoxide. map[shardID] -> txs
-	lock               sync.Mutex
+	TxQueue        []*Transaction            // transaction Queue
+	RelayPool      map[uint64][]*Transaction // designed for sharded blockchain, from Monoxide map[shardID] -> txs
+	InternalTxPool map[uint64][]*Transaction // designed for sharded blockchain, from Monoxide. map[shardID] -> itxs
+	lock           sync.Mutex
 	// The pending list is ignored
 }
 
 func NewTxPool() *TxPool {
 	fmt.Println("NewTxPool")
 	return &TxPool{
-		TxQueue:            make([]*Transaction, 0),
-		RelayPool:          make(map[uint64][]*Transaction),
-		InternalTxPool:     make(map[uint64][]*Transaction),
-		CrossShardFuncPool: make(map[uint64][]*Transaction),
+		TxQueue:        make([]*Transaction, 0),
+		RelayPool:      make(map[uint64][]*Transaction),
+		InternalTxPool: make(map[uint64][]*Transaction),
 	}
 }
 
@@ -209,24 +207,4 @@ func (txpool *TxPool) ClearInternalPool() {
 	txpool.lock.Lock()
 	defer txpool.lock.Unlock()
 	txpool.InternalTxPool = nil
-}
-
-func (txpool *TxPool) AddCrossShardFuncTx(tx *Transaction, shardID uint64) {
-	txpool.lock.Lock()
-	defer txpool.lock.Unlock()
-	if txpool.CrossShardFuncPool == nil {
-		fmt.Println("AddCrossShardFuncTx(): CrossShardFuncPoolを初期化します")
-		txpool.CrossShardFuncPool = make(map[uint64][]*Transaction)
-	}
-	_, ok := txpool.CrossShardFuncPool[shardID]
-	if !ok {
-		txpool.CrossShardFuncPool[shardID] = make([]*Transaction, 0)
-	}
-	txpool.CrossShardFuncPool[shardID] = append(txpool.CrossShardFuncPool[shardID], tx)
-}
-
-func (txpool *TxPool) ClearCrossShardFuncPool() {
-	txpool.lock.Lock()
-	defer txpool.lock.Unlock()
-	txpool.CrossShardFuncPool = nil
 }

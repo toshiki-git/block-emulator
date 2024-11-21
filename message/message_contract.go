@@ -11,14 +11,15 @@ type CrossShardFunctionRequest struct {
 	Sender             string   // リクエスト発信元のアドレス
 	Recepient          string   // リクエストの宛先となるコントラクトのアドレス
 	Value              *big.Int // 送金額
-	ContractAddress    string   // 呼び出すコントラクトのアドレス
 	MethodSignature    string   // 呼び出すメソッドのシグネチャ
 	Arguments          []byte   // メソッドに渡す引数
 	RequestID          string   // リクエストを識別するためのID
 	Timestamp          int64    // リクエストが発生したタイムスタンプ
 	Signature          string   // リクエスト発信元の署名
-	RootCallNode       *core.CallNode
 	TypeTraceAddress   string
+	Tx                 *core.Transaction
+	ProcessedMap       map[string]bool
+	VisitedShards      map[uint64]bool // 過去に通過したシャードIDを記録
 }
 
 type CrossShardFunctionResponse struct {
@@ -32,6 +33,8 @@ type CrossShardFunctionResponse struct {
 	ResultData         []byte   // 処理結果のデータ
 	Timestamp          int64    // 応答が発生したタイムスタンプ
 	Signature          string   // 応答内容の署名
-	RootCallNode       *core.CallNode
 	TypeTraceAddress   string
+	Tx                 *core.Transaction
+	ProcessedMap       map[string]bool
+	VisitedShards      map[uint64]bool // 過去に通過したシャードIDを記録
 }

@@ -16,6 +16,7 @@ import (
 type ProposalPbftInsideExtraHandleMod struct {
 	cdm      *dataSupport.Data_supportCLPA
 	pbftNode *PbftConsensusNode
+	cfcpm    *dataSupport.CrossFunctionCallPoolManager
 }
 
 // propose request with different types
@@ -147,16 +148,10 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 
 			//TODO: ここにInternal TXを持っている場合は追加の処理を書く
 			if tx.HasContract {
-				pphm.pbftNode.pl.Plog.Println("HasContractの処理を行います。")
 				if tx.IsCrossShardFuncCall {
-					pphm.pbftNode.pl.Plog.Println("CrossShardFunctionCallの処理を行います。")
-					ssid = pphm.pbftNode.CurChain.Get_PartitionMap(tx.Sender)
 					crossShardFunctionCall = append(crossShardFunctionCall, tx)
-					// TODO: ssidが正しいか検証
-					pphm.pbftNode.CurChain.Txpool.AddCrossShardFuncTx(tx, ssid)
 				} else {
-					// Internal TXを持つがすべて同じshard内で完結(txも含め)する場合
-					pphm.pbftNode.pl.Plog.Println("InnerSCの処理を行います。")
+					// Internal TXを持つが、すべて同じshard内で完結(txも含め)する場合
 					innerSCTxs = append(innerSCTxs, tx)
 				}
 			}
@@ -171,9 +166,6 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 			// ここでInternal TXも送信する
 			pphm.pbftNode.RelayMsgSend()
 		}
-
-		// CContactResponse Msgを送信
-		pphm.pbftNode.CrossShardFunctionResponseMsgSend()
 
 		// send txs excuted in this block to the listener
 		// add more message to measure more metrics

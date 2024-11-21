@@ -9,34 +9,34 @@ import (
 func Test_Step(t *testing.T) {
 	// トランザクションのモックデータを作成
 	tx := Transaction{
-		Sender:    "0xae2",
-		Recipient: "0x6b7",
+		Sender:    "ae2",
+		Recipient: "6b7",
 		InternalTxs: []*InternalTransaction{
-			{TypeTraceAddress: "call_0", Sender: "0x6b7", Recipient: "0xc02"},
-			{TypeTraceAddress: "call_1", Sender: "0x6b7", Recipient: "0x4fc"},
-			{TypeTraceAddress: "call_1_0", Sender: "0x4fc", Recipient: "0x5ea"},
-			{TypeTraceAddress: "staticcall_1_1", Sender: "0x4fc", Recipient: "0x5ea"},
-			{TypeTraceAddress: "staticcall_1_2", Sender: "0x4fc", Recipient: "0xc02"},
-			{TypeTraceAddress: "call_2", Sender: "0x6b7", Recipient: "0x0f4"},
-			{TypeTraceAddress: "call_3", Sender: "0x6b7", Recipient: "0xfd4"},
-			{TypeTraceAddress: "call_3_0", Sender: "0xfd4", Recipient: "0xc02"},
-			{TypeTraceAddress: "staticcall_3_1", Sender: "0xfd4", Recipient: "0x0f4"},
-			{TypeTraceAddress: "staticcall_3_2", Sender: "0xfd4", Recipient: "0xc02"},
-			{TypeTraceAddress: "call_4", Sender: "0x6b7", Recipient: "0xc02"},
-			{TypeTraceAddress: "call_5", Sender: "0x6b7", Recipient: "0xe3c"},
-			{TypeTraceAddress: "call_5_0", Sender: "0xe3c", Recipient: "0x207"},
-			{TypeTraceAddress: "staticcall_5_1", Sender: "0xe3c", Recipient: "0x207"},
-			{TypeTraceAddress: "staticcall_5_2", Sender: "0xe3c", Recipient: "0xc02"},
-			{TypeTraceAddress: "call_6", Sender: "0x6b7", Recipient: "0xc02"},
-			{TypeTraceAddress: "call_7", Sender: "0x6b7", Recipient: "0xf1d"},
-			{TypeTraceAddress: "call_7_0", Sender: "0xf1d", Recipient: "0x195"},
-			{TypeTraceAddress: "staticcall_7_1", Sender: "0xf1d", Recipient: "0x195"},
-			{TypeTraceAddress: "staticcall_7_2", Sender: "0xf1d", Recipient: "0xc02"},
+			{TypeTraceAddress: "call_0", Sender: "6b7", Recipient: "c02"},
+			{TypeTraceAddress: "call_1", Sender: "6b7", Recipient: "4fc"},
+			{TypeTraceAddress: "call_1_0", Sender: "4fc", Recipient: "5ea"},
+			{TypeTraceAddress: "staticcall_1_1", Sender: "4fc", Recipient: "5ea"},
+			{TypeTraceAddress: "staticcall_1_2", Sender: "4fc", Recipient: "c02"},
+			{TypeTraceAddress: "call_2", Sender: "6b7", Recipient: "0f4"},
+			{TypeTraceAddress: "call_3", Sender: "6b7", Recipient: "fd4"},
+			{TypeTraceAddress: "call_3_0", Sender: "fd4", Recipient: "c02"},
+			{TypeTraceAddress: "staticcall_3_1", Sender: "fd4", Recipient: "0f4"},
+			{TypeTraceAddress: "staticcall_3_2", Sender: "fd4", Recipient: "c02"},
+			{TypeTraceAddress: "call_4", Sender: "6b7", Recipient: "c02"},
+			{TypeTraceAddress: "call_5", Sender: "6b7", Recipient: "e3c"},
+			{TypeTraceAddress: "call_5_0", Sender: "e3c", Recipient: "207"},
+			{TypeTraceAddress: "staticcall_5_1", Sender: "e3c", Recipient: "207"},
+			{TypeTraceAddress: "staticcall_5_2", Sender: "e3c", Recipient: "c02"},
+			{TypeTraceAddress: "call_6", Sender: "6b7", Recipient: "c02"},
+			{TypeTraceAddress: "call_7", Sender: "6b7", Recipient: "f1d"},
+			{TypeTraceAddress: "call_7_0", Sender: "f1d", Recipient: "195"},
+			{TypeTraceAddress: "staticcall_7_1", Sender: "f1d", Recipient: "195"},
+			{TypeTraceAddress: "staticcall_7_2", Sender: "f1d", Recipient: "c02"},
 		},
 	}
 
 	// 呼び出しツリーの構築
-	root := BuildExecutionCallTree(&tx)
+	root := BuildExecutionCallTree(&tx, map[string]bool{"1_1": true})
 	fmt.Println("=== Call Tree ===")
 	root.PrintTree(0)
 
