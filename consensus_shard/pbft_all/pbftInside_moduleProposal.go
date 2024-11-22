@@ -177,6 +177,9 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 			Relay1Txs: relay1Txs,
 			Relay2Txs: relay2Txs,
 
+			CrossShardFunctionCall: crossShardFunctionCall,
+			InnerSCTxs:             innerSCTxs,
+
 			SenderShardID: pphm.pbftNode.ShardID,
 			ProposeTime:   r.ReqTime,
 			CommitTime:    time.Now(),
@@ -197,11 +200,12 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 			"TxPool Size",
 			"# of all Txs in this block",
 
+			"# of Inner Account Txs in this block",
 			"# of Relay1 Txs in this block",
 			"# of Relay2 Txs in this block",
 
-			"Cross Shard Function Call Txs",
-			"Inner SC Txs",
+			"# of Cross Shard Function Call Txs in this block",
+			"# of Inner SC Txs in this block",
 
 			"TimeStamp - Propose (unixMill)",
 			"TimeStamp - Commit (unixMill)",
@@ -216,6 +220,7 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 			strconv.Itoa(len(pphm.pbftNode.CurChain.Txpool.TxQueue)),
 			strconv.Itoa(len(block.Body)),
 
+			strconv.Itoa(len(innerShardTxs)),
 			strconv.Itoa(len(relay1Txs)),
 			strconv.Itoa(len(relay2Txs)),
 

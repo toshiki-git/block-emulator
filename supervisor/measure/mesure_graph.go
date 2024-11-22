@@ -72,7 +72,8 @@ func (tg *TestModule_CLPA) writeToCSV() {
 		"edges2Shard",
 		"mergedVertexNum",
 		"mergedContractNum",
-		"executionTime"}
+		"executionTime",
+	}
 
 	measureVals := make([][]string, 0)
 

@@ -107,20 +107,29 @@ func (tat *TestModule_avgTPS_Broker) OutputRecord() (perEpochTPS []float64, tota
 
 func (tat *TestModule_avgTPS_Broker) writeToCSV() {
 	fileName := tat.OutputMetricName()
-	measureName := []string{"EpochID", "Total tx # in this epoch", "Normal tx # in this epoch", "Broker1 tx # in this epoch", "Broker2 tx # in this epoch", "Epoch start time", "Epoch end time", "Avg. TPS of this epoch"}
+	measureName := []string{
+		"EpochID",
+		"Total tx # in this epoch",
+		"Normal tx # in this epoch",
+		"Broker1 tx # in this epoch",
+		"Broker2 tx # in this epoch",
+		"Epoch start time",
+		"Epoch end time",
+		"Avg. TPS of this epoch",
+	}
 	measureVals := make([][]string, 0)
 
 	for eid, exTxNum := range tat.excutedTxNum {
 		timeGap := tat.endTime[eid].Sub(tat.startTime[eid]).Seconds()
 		csvLine := []string{
 			strconv.Itoa(eid),
-			strconv.FormatFloat(exTxNum, 'f', '8', 64),
+			strconv.FormatFloat(exTxNum, 'f', 8, 64),
 			strconv.Itoa(tat.normalTxNum[eid]),
 			strconv.Itoa(tat.broker1TxNum[eid]),
 			strconv.Itoa(tat.broker2TxNum[eid]),
 			strconv.FormatInt(tat.startTime[eid].UnixMilli(), 10),
 			strconv.FormatInt(tat.endTime[eid].UnixMilli(), 10),
-			strconv.FormatFloat(exTxNum/timeGap, 'f', '8', 64),
+			strconv.FormatFloat(exTxNum/timeGap, 'f', 8, 64),
 		}
 		measureVals = append(measureVals, csvLine)
 	}

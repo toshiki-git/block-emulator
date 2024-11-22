@@ -6,6 +6,7 @@ import (
 )
 
 type CrossShardFunctionRequest struct {
+	OriginalSender     string
 	SourceShardID      uint64
 	DestinationShardID uint64
 	Sender             string   // リクエスト発信元のアドレス
@@ -23,6 +24,7 @@ type CrossShardFunctionRequest struct {
 }
 
 type CrossShardFunctionResponse struct {
+	OriginalSender     string
 	SourceShardID      uint64   // 応答を送信するシャードID
 	DestinationShardID uint64   // 応答の宛先となるシャードID（リクエストの発信元シャード）
 	Sender             string   // 応答発信元のアドレス

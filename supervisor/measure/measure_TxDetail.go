@@ -16,6 +16,9 @@ type txMetricDetailTime struct {
 
 	// broker tx time
 	Broker1CommitTimestamp, Broker2CommitTimestamp time.Time
+
+	// sc tx time
+	CrossFunctionCallCommitTimestamp, InnerSCCommitTimestamp time.Time
 }
 
 // to test Tx detail
@@ -76,6 +79,26 @@ func (ttd *TestTxDetail) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 		ttd.txHash2DetailTime[string(b2tx.RawTxHash)].Broker2CommitTimestamp = b.CommitTime
 		ttd.txHash2DetailTime[string(b2tx.RawTxHash)].TxCommitTimestamp = b.CommitTime
 	}
+
+	// add code
+	for _, csfc := range b.CrossShardFunctionCall {
+		if _, ok := ttd.txHash2DetailTime[string(csfc.TxHash)]; !ok {
+			ttd.txHash2DetailTime[string(csfc.TxHash)] = &txMetricDetailTime{}
+		}
+		ttd.txHash2DetailTime[string(csfc.TxHash)].TxProposeTimestamp = csfc.Time
+		ttd.txHash2DetailTime[string(csfc.TxHash)].BlockProposeTimestamp = b.ProposeTime
+		ttd.txHash2DetailTime[string(csfc.TxHash)].TxCommitTimestamp = b.CommitTime
+	}
+
+	for _, innerSCtx := range b.InnerSCTxs {
+		if _, ok := ttd.txHash2DetailTime[string(innerSCtx.TxHash)]; !ok {
+			ttd.txHash2DetailTime[string(innerSCtx.TxHash)] = &txMetricDetailTime{}
+		}
+		ttd.txHash2DetailTime[string(innerSCtx.TxHash)].TxProposeTimestamp = innerSCtx.Time
+		ttd.txHash2DetailTime[string(innerSCtx.TxHash)].BlockProposeTimestamp = b.ProposeTime
+		ttd.txHash2DetailTime[string(innerSCtx.TxHash)].TxCommitTimestamp = b.CommitTime
+	}
+
 }
 
 func (ttd *TestTxDetail) HandleExtraMessage([]byte) {}
@@ -96,6 +119,8 @@ func (ttd *TestTxDetail) writeToCSV() {
 		"Relay2 Tx commit timestamp (not a relay tx -> nil)",
 		"Broker1 Tx commit timestamp (not a broker tx -> nil)",
 		"Broker2 Tx commit timestamp (not a broker tx -> nil)",
+		"CrosShardFunctionCall Tx commit timestamp (not a cross shard tx -> nil)",
+		"InnerSCTx Tx commit timestamp (not a inner sc tx -> nil)",
 		"Confirmed latency of this tx (ms)",
 	}
 	measureVals := make([][]string, 0)
@@ -113,6 +138,9 @@ func (ttd *TestTxDetail) writeToCSV() {
 
 			timestampToString(val.Broker1CommitTimestamp),
 			timestampToString(val.Broker2CommitTimestamp),
+
+			timestampToString(val.CrossFunctionCallCommitTimestamp),
+			timestampToString(val.InnerSCCommitTimestamp),
 
 			strconv.FormatInt(int64(val.TxCommitTimestamp.Sub(val.TxProposeTimestamp).Milliseconds()), 10),
 		}

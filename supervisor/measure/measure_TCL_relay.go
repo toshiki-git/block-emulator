@@ -132,13 +132,14 @@ func (tml *TestModule_TCL_Relay) writeToCSV() {
 		"Sum of Relay2 TCL (ms) (Duration: Relay2 Tx Propose -> Relay2 Tx Commit)",
 		"Sum of innerShardTx TCL (ms)",
 		"Sum of CTX TCL (ms) (Duration: Relay1 Tx Propose -> Relay2 Tx Commit)",
-		"Sum of All Tx TCL (sec.)"}
+		"Sum of All Tx TCL (sec.)",
+	}
 	measureVals := make([][]string, 0)
 
 	for eid, totTxInE := range tml.txNum {
 		csvLine := []string{
 			strconv.Itoa(eid),
-			strconv.FormatFloat(totTxInE, 'f', '8', 64),
+			strconv.FormatFloat(totTxInE, 'f', 8, 64),
 			strconv.Itoa(tml.normalTxNum[eid]),
 			strconv.Itoa(tml.relay1TxNum[eid]),
 			strconv.Itoa(tml.relay2TxNum[eid]),
@@ -146,7 +147,7 @@ func (tml *TestModule_TCL_Relay) writeToCSV() {
 			strconv.FormatInt(tml.relay2CommitLatency[eid], 10),
 			strconv.FormatInt(tml.normalTxCommitLatency[eid], 10),
 			strconv.FormatInt(tml.ctxCommitLatency[eid], 10),
-			strconv.FormatFloat(tml.totTxLatencyEpoch[eid], 'f', '8', 64),
+			strconv.FormatFloat(tml.totTxLatencyEpoch[eid], 'f', 8, 64),
 		}
 		measureVals = append(measureVals, csvLine)
 	}

@@ -69,13 +69,19 @@ func (ttnc *TestTxNumCount_Broker) OutputRecord() (perEpochCTXs []float64, totTx
 
 func (ttnc *TestTxNumCount_Broker) writeToCSV() {
 	fileName := ttnc.OutputMetricName()
-	measureName := []string{"EpochID", "Total tx # in this epoch", "Normal tx # in this epoch", "Broker1 tx # in this epoch", "Broker2 tx # in this epoch"}
+	measureName := []string{
+		"EpochID",
+		"Total tx # in this epoch",
+		"Normal tx # in this epoch",
+		"Broker1 tx # in this epoch",
+		"Broker2 tx # in this epoch",
+	}
 	measureVals := make([][]string, 0)
 
 	for eid, totTxInE := range ttnc.txNum {
 		csvLine := []string{
 			strconv.Itoa(eid),
-			strconv.FormatFloat(totTxInE, 'f', '8', 64),
+			strconv.FormatFloat(totTxInE, 'f', 8, 64),
 			strconv.Itoa(ttnc.normalTxNum[eid]),
 			strconv.Itoa(ttnc.broker1TxNum[eid]),
 			strconv.Itoa(ttnc.broker2TxNum[eid]),

@@ -81,18 +81,26 @@ func (tctr *TestCrossTxRate_Broker) OutputRecord() (perEpochCTXratio []float64, 
 
 func (tctr *TestCrossTxRate_Broker) writeToCSV() {
 	fileName := tctr.OutputMetricName()
-	measureName := []string{"EpochID", "Total tx # in this epoch", "CTX # in this epoch", "Normal tx # in this epoch", "Broker1 tx # in this epoch", "Broker2 tx # in this epoch", "CTX ratio of this epoch"}
+	measureName := []string{
+		"EpochID",
+		"Total tx # in this epoch",
+		"CTX # in this epoch",
+		"Normal tx # in this epoch",
+		"Broker1 tx # in this epoch",
+		"Broker2 tx # in this epoch",
+		"CTX ratio of this epoch",
+	}
 	measureVals := make([][]string, 0)
 
 	for eid, totTxInE := range tctr.totTxNum {
 		csvLine := []string{
 			strconv.Itoa(eid),
-			strconv.FormatFloat(totTxInE, 'f', '8', 64),
-			strconv.FormatFloat(tctr.totCrossTxNum[eid], 'f', '8', 64),
+			strconv.FormatFloat(totTxInE, 'f', 8, 64),
+			strconv.FormatFloat(tctr.totCrossTxNum[eid], 'f', 8, 64),
 			strconv.Itoa(tctr.normalTxNum[eid]),
 			strconv.Itoa(tctr.broker1TxNum[eid]),
 			strconv.Itoa(tctr.broker2TxNum[eid]),
-			strconv.FormatFloat(tctr.totCrossTxNum[eid]/totTxInE, 'f', '8', 64),
+			strconv.FormatFloat(tctr.totCrossTxNum[eid]/totTxInE, 'f', 8, 64),
 		}
 		measureVals = append(measureVals, csvLine)
 	}

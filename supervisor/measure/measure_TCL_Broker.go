@@ -118,7 +118,8 @@ func (tml *TestModule_TCL_Broker) OutputRecord() (perEpochLatency []float64, tot
 
 func (tml *TestModule_TCL_Broker) writeToCSV() {
 	fileName := tml.OutputMetricName()
-	measureName := []string{"EpochID",
+	measureName := []string{
+		"EpochID",
 		"Total tx # in this epoch",
 		"Normal tx # in this epoch",
 		"Broker1 tx # in this epoch",
@@ -127,13 +128,14 @@ func (tml *TestModule_TCL_Broker) writeToCSV() {
 		"Sum of Broker2 TCL (ms) (Duration: Broker2 Tx Propose -> Broker2 Tx Commit)",
 		"Sum of innerShardTx TCL (ms)",
 		"Sum of CTX TCL (ms) (Duration: Broker1 Tx Propose -> Broker2 Tx Commit)",
-		"Sum of All Tx TCL (sec.)"}
+		"Sum of All Tx TCL (sec.)",
+	}
 
 	measureVals := make([][]string, 0)
 	for eid, totTxInE := range tml.txNum {
 		csvLine := []string{
 			strconv.Itoa(eid),
-			strconv.FormatFloat(totTxInE, 'f', '8', 64),
+			strconv.FormatFloat(totTxInE, 'f', 8, 64),
 			strconv.Itoa(tml.normalTxNum[eid]),
 			strconv.Itoa(tml.broker1TxNum[eid]),
 			strconv.Itoa(tml.broker2TxNum[eid]),
@@ -141,7 +143,7 @@ func (tml *TestModule_TCL_Broker) writeToCSV() {
 			strconv.FormatInt(tml.broker2CommitLatency[eid], 10),
 			strconv.FormatInt(tml.normalTxCommitLatency[eid], 10),
 			strconv.FormatInt(tml.ctxCommitLatency[eid], 10),
-			strconv.FormatFloat(tml.totTxLatencyEpoch[eid], 'f', '8', 64),
+			strconv.FormatFloat(tml.totTxLatencyEpoch[eid], 'f', 8, 64),
 		}
 		measureVals = append(measureVals, csvLine)
 	}

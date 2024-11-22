@@ -84,18 +84,26 @@ func (tctr *TestCrossTxRate_Relay) OutputRecord() (perEpochCTXratio []float64, t
 
 func (tctr *TestCrossTxRate_Relay) writeToCSV() {
 	fileName := tctr.OutputMetricName()
-	measureName := []string{"EpochID", "Total tx # in this epoch", "CTX # in this epoch", "Normal tx # in this epoch", "Relay1 tx # in this epoch", "Relay2 tx # in this epoch", "CTX ratio of this epoch"}
+	measureName := []string{
+		"EpochID",
+		"Total tx # in this epoch",
+		"CTX # in this epoch",
+		"Normal tx # in this epoch",
+		"Relay1 tx # in this epoch",
+		"Relay2 tx # in this epoch",
+		"CTX ratio of this epoch",
+	}
 	measureVals := make([][]string, 0)
 
 	for eid, totTxInE := range tctr.totTxNum {
 		csvLine := []string{
 			strconv.Itoa(eid),
-			strconv.FormatFloat(totTxInE, 'f', '8', 64),
-			strconv.FormatFloat(tctr.totCrossTxNum[eid], 'f', '8', 64),
+			strconv.FormatFloat(totTxInE, 'f', 8, 64),
+			strconv.FormatFloat(tctr.totCrossTxNum[eid], 'f', 8, 64),
 			strconv.Itoa(tctr.normalTxNum[eid]),
 			strconv.Itoa(tctr.relay1TxNum[eid]),
 			strconv.Itoa(tctr.relay2TxNum[eid]),
-			strconv.FormatFloat(tctr.totCrossTxNum[eid]/totTxInE, 'f', '8', 64),
+			strconv.FormatFloat(tctr.totCrossTxNum[eid]/totTxInE, 'f', 8, 64),
 		}
 		measureVals = append(measureVals, csvLine)
 	}
