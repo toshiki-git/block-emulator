@@ -11,6 +11,8 @@ import (
 	"log"
 	"strconv"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 type ProposalPbftInsideExtraHandleMod struct {
@@ -96,6 +98,7 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 	// if a block request ...
 	block := core.DecodeB(r.Msg.Content)
 	pphm.pbftNode.pl.Plog.Printf("S%dN%d : adding the block %d...now height = %d \n", pphm.pbftNode.ShardID, pphm.pbftNode.NodeID, block.Header.Number, pphm.pbftNode.CurChain.CurrentBlock.Header.Number)
+	fmt.Printf("State Root in HandleinCommit(): %s\n", common.BytesToHash(pphm.pbftNode.CurChain.CurrentBlock.Header.StateRoot))
 	pphm.pbftNode.CurChain.AddBlock(block)
 	pphm.pbftNode.pl.Plog.Printf("S%dN%d : added the block %d... \n", pphm.pbftNode.ShardID, pphm.pbftNode.NodeID, block.Header.Number)
 	pphm.pbftNode.CurChain.PrintBlockChain()

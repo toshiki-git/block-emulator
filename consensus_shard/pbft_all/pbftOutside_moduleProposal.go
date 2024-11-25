@@ -346,10 +346,41 @@ func (prom *ProposalRelayOutsideModule) processBatchResponses(responses []*messa
 					responseByShard[destShardID] = append(responseByShard[destShardID], response)
 				} else {
 					// txを発行する
+					contractAddrByShard := make(map[uint64]map[string]struct{}) // シャードごとのコントラクトアドレスを格納
+
+					// InternalTxsを処理してコントラクトアドレスを収集
+					for _, internalTx := range res.Tx.InternalTxs {
+						// Senderがコントラクトの場合
+						if internalTx.SenderIsContract {
+							ssid := prom.pbftNode.CurChain.Get_PartitionMap(internalTx.Sender)
+							if contractAddrByShard[ssid] == nil {
+								contractAddrByShard[ssid] = make(map[string]struct{})
+							}
+							contractAddrByShard[ssid][internalTx.Sender] = struct{}{}
+						}
+
+						// Recipientがコントラクトの場合
+						if internalTx.RecipientIsContract {
+							rsid := prom.pbftNode.CurChain.Get_PartitionMap(internalTx.Recipient)
+							if contractAddrByShard[rsid] == nil {
+								contractAddrByShard[rsid] = make(map[string]struct{})
+							}
+							contractAddrByShard[rsid][internalTx.Recipient] = struct{}{}
+						}
+					}
+
+					// VisitedShardsを処理してトランザクションを作成・挿入
 					for visitedShardID := range res.VisitedShards {
 						tx := core.NewTransaction(res.OriginalSender, "0000000000000000000000000000000000000001", res.Tx.Value, 0, time.Now())
 						tx.HasContract = true
 						tx.IsCrossShardFuncCall = true
+
+						// シャードに関連付けられたコントラクトアドレスを追加
+						for contractAddr := range contractAddrByShard[visitedShardID] {
+							tx.SmartContractAddress = append(tx.SmartContractAddress, contractAddr)
+						}
+
+						// トランザクションを対応するシャードに追加
 						injectTxByShard[visitedShardID] = append(injectTxByShard[visitedShardID], tx)
 					}
 				}
@@ -411,9 +442,9 @@ func (prom *ProposalRelayOutsideModule) sendRequests(requestsByShard map[uint64]
 	for sid, requests := range requestsByShard {
 		if sid == prom.pbftNode.ShardID {
 			prom.pbftNode.pl.Plog.Println("自分自身のシャードには送信しません。DFSの処理が正しく行われていない可能性があります。")
-			for _, req := range requests {
+			/* for _, req := range requests {
 				fmt.Println(req)
-			}
+			} */
 			// continue
 		}
 		rByte, err := json.Marshal(requests)

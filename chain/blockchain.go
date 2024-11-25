@@ -5,6 +5,7 @@ package chain
 
 import (
 	"blockEmulator/core"
+	"blockEmulator/erc20"
 	"blockEmulator/params"
 	"blockEmulator/partition"
 	"blockEmulator/storage"
@@ -99,66 +100,100 @@ func (bc *BlockChain) GetUpdateStatusTrie(txs []*core.Transaction) common.Hash {
 	}
 	// build trie from the triedb (in disk)
 	st, err := trie.New(trie.TrieID(common.BytesToHash(bc.CurrentBlock.Header.StateRoot)), bc.triedb)
+	fmt.Println("StateRoot: ", common.BytesToHash(bc.CurrentBlock.Header.StateRoot))
 	if err != nil {
+		fmt.Println("ここでエラー出てる")
 		log.Panic(err)
 	}
 	cnt := 0
 	// handle transactions, the signature check is ignored here
 	for i, tx := range txs {
+		// for smart contract tx
+		if tx.HasContract {
+			for _, addr := range tx.SmartContractAddress {
+				fmt.Printf("txhash: %x, sc addr: %s\n", tx.TxHash, addr)
+				state_enc, _ := st.Get([]byte(addr))
+				var state *core.AccountState
+				if state_enc == nil {
+					// fmt.Println("missing account SENDER, now adding account")
+					ib := new(big.Int)
+					ib.Add(ib, params.Init_Balance)
+					state = &core.AccountState{
+						Nonce:   uint64(i),
+						Balance: ib,
+						Storage: erc20.NewERC20Token("sampleToken", "STK"),
+					}
+				} else {
+					state = core.DecodeAS(state_enc)
+				}
+				// fmt.Println(addr, state, state.Storage)
+				err := state.Storage.Transfer("0", "1", new(big.Int).SetUint64(100)) // TODO: 適切なtokenの送信にする
+				if err != nil {
+					fmt.Println("[ERROR]", err)
+				}
+
+				st.Update([]byte(addr), state.Encode())
+				cnt++
+			}
+		}
+
 		// fmt.Printf("tx %d: %s, %s\n", i, tx.Sender, tx.Recipient)
 		// senderIn := false
 		// Relayの場合(senderとrecepientのshardが違う場合)でshardが違う場合は: まずsenderの残高を引くだけ。1回目
-		if !tx.Relayed && (bc.Get_PartitionMap(tx.Sender) == bc.ChainConfig.ShardID || tx.HasBroker) {
-			// senderIn = true
-			// fmt.Printf("the sender %s is in this shard %d, \n", tx.Sender, bc.ChainConfig.ShardID)
-			// modify local accountstate
-			s_state_enc, _ := st.Get([]byte(tx.Sender))
-			var s_state *core.AccountState
-			if s_state_enc == nil {
-				// fmt.Println("missing account SENDER, now adding account")
-				ib := new(big.Int)
-				ib.Add(ib, params.Init_Balance)
-				s_state = &core.AccountState{
-					Nonce:   uint64(i),
-					Balance: ib,
+		if !tx.HasContract {
+			if !tx.Relayed && (bc.Get_PartitionMap(tx.Sender) == bc.ChainConfig.ShardID || tx.HasBroker) {
+				// senderIn = true
+				fmt.Printf("the sender %s is in this shard %d, \n", tx.Sender, bc.ChainConfig.ShardID)
+				// modify local accountstate
+				s_state_enc, _ := st.Get([]byte(tx.Sender))
+				var s_state *core.AccountState
+				if s_state_enc == nil {
+					// fmt.Println("missing account SENDER, now adding account")
+					ib := new(big.Int)
+					ib.Add(ib, params.Init_Balance)
+					s_state = &core.AccountState{
+						Nonce:   uint64(i),
+						Balance: ib,
+					}
+				} else {
+					s_state = core.DecodeAS(s_state_enc)
 				}
-			} else {
-				s_state = core.DecodeAS(s_state_enc)
-			}
-			s_balance := s_state.Balance
-			if s_balance.Cmp(tx.Value) == -1 {
-				fmt.Printf("the balance is less than the transfer amount\n")
-				continue
-			}
-			// senderの残高を引くだけ
-			s_state.Deduct(tx.Value)
-			st.Update([]byte(tx.Sender), s_state.Encode())
-			cnt++
-		}
-		// recipientIn := false
-		// Relayの場合でshardが違う場合は: bc.Get_PartitionMap(tx.Recipient) == bc.ChainConfig.ShardIDがfalseになるので、残高は増えない
-		// Relayedがtrueの場合はtrueになるので、そこで残高を増やす
-		if bc.Get_PartitionMap(tx.Recipient) == bc.ChainConfig.ShardID || tx.HasBroker {
-			// fmt.Printf("the recipient %s is in this shard %d, \n", tx.Recipient, bc.ChainConfig.ShardID)
-			// recipientIn = true
-			// modify local state
-			r_state_enc, _ := st.Get([]byte(tx.Recipient))
-			var r_state *core.AccountState
-			if r_state_enc == nil {
-				// fmt.Println("missing account RECIPIENT, now adding account")
-				ib := new(big.Int)
-				ib.Add(ib, params.Init_Balance)
-				r_state = &core.AccountState{
-					Nonce:   uint64(i),
-					Balance: ib,
+				s_balance := s_state.Balance
+				if s_balance.Cmp(tx.Value) == -1 {
+					fmt.Printf("the balance is less than the transfer amount\n")
+					continue
 				}
-			} else {
-				r_state = core.DecodeAS(r_state_enc)
+				// senderの残高を引くだけ
+				s_state.Deduct(tx.Value)
+				st.Update([]byte(tx.Sender), s_state.Encode())
+				cnt++
 			}
-			r_state.Deposit(tx.Value)
-			st.Update([]byte(tx.Recipient), r_state.Encode())
-			cnt++
+			// recipientIn := false
+			// Relayの場合でshardが違う場合は: bc.Get_PartitionMap(tx.Recipient) == bc.ChainConfig.ShardIDがfalseになるので、残高は増えない
+			// Relayedがtrueの場合はtrueになるので、そこで残高を増やす
+			if bc.Get_PartitionMap(tx.Recipient) == bc.ChainConfig.ShardID || tx.HasBroker {
+				fmt.Printf("the recipient %s is in this shard %d, \n", tx.Recipient, bc.ChainConfig.ShardID)
+				// recipientIn = true
+				// modify local state
+				r_state_enc, _ := st.Get([]byte(tx.Recipient))
+				var r_state *core.AccountState
+				if r_state_enc == nil {
+					// fmt.Println("missing account RECIPIENT, now adding account")
+					ib := new(big.Int)
+					ib.Add(ib, params.Init_Balance)
+					r_state = &core.AccountState{
+						Nonce:   uint64(i),
+						Balance: ib,
+					}
+				} else {
+					r_state = core.DecodeAS(r_state_enc)
+				}
+				r_state.Deposit(tx.Value)
+				st.Update([]byte(tx.Recipient), r_state.Encode())
+				cnt++
+			}
 		}
+
 	}
 	// commit the memory trie to the database in the disk
 	if cnt == 0 {
@@ -263,15 +298,23 @@ func (bc *BlockChain) AddBlock(b *core.Block) {
 		fmt.Println("err parent block hash")
 		return
 	}
-
+	fmt.Printf("State Root Before AddBlock(): %s\n", common.BytesToHash(bc.CurrentBlock.Header.StateRoot))
 	// if the treeRoot is existed in the node, the transactions is no need to be handled again
 	_, err := trie.New(trie.TrieID(common.BytesToHash(b.Header.StateRoot)), bc.triedb)
+	var stateRoot []byte
 	if err != nil {
+		// LeaderはProposeの時点でStateRootを計算しているので、不要
+		// リーダー以外のノードが実行している
+		// TODO: SCTXをGetUpdateStatusTrie()で処理するとLeaderとnodeのStateRootが異なってる
 		rt := bc.GetUpdateStatusTrie(b.Body)
-		fmt.Println(bc.CurrentBlock.Header.Number+1, "the root = ", rt.Bytes())
+		stateRoot = rt.Bytes()
+		fmt.Println(bc.CurrentBlock.Header.Number+1, "the root = ", common.BytesToHash(stateRoot))
 	}
 	bc.CurrentBlock = b
+	bc.CurrentBlock.Header.StateRoot = stateRoot
 	bc.Storage.AddBlock(b)
+
+	fmt.Printf("State Root Afrer AddBlock(): %s\n", common.BytesToHash(bc.CurrentBlock.Header.StateRoot))
 }
 
 // new a blockchain.

@@ -19,7 +19,7 @@ type CrossShardFunctionRequest struct {
 	Signature          string   // リクエスト発信元の署名
 	TypeTraceAddress   string
 	Tx                 *core.Transaction
-	ProcessedMap       map[string]bool
+	ProcessedMap       map[string]bool // key: TypeTraceAddress, value: 処理済みかどうか
 	VisitedShards      map[uint64]bool // 過去に通過したシャードIDを記録
 }
 

@@ -4,6 +4,7 @@
 package core
 
 import (
+	"blockEmulator/erc20"
 	"blockEmulator/utils"
 	"bytes"
 	"crypto/sha256"
@@ -22,8 +23,9 @@ type AccountState struct {
 	AcAddress   utils.Address // this part is not useful, abort
 	Nonce       uint64
 	Balance     *big.Int
-	StorageRoot []byte // only for smart contract account
-	CodeHash    []byte // only for smart contract account
+	StorageRoot []byte            // only for smart contract account
+	CodeHash    []byte            // only for smart contract account
+	Storage     *erc20.ERC20Token // only for smart contract account
 }
 
 // Reduce the balance of an account

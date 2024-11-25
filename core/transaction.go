@@ -40,6 +40,7 @@ type Transaction struct {
 	IsCrossShardFuncCall bool
 	IsAllInner           bool
 	TypeTraceAddress     string
+	SmartContractAddress []utils.Address
 }
 
 func (tx *Transaction) PrintTx() string {
