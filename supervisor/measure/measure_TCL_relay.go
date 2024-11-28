@@ -10,18 +10,22 @@ import (
 type TestModule_TCL_Relay struct {
 	epochID int
 
-	totTxLatencyEpoch     []float64 // record the Transaction_Confirm_Latency in each epoch, only for excuted txs (normal txs & relay2 txs)
-	relay1CommitLatency   []int64
-	relay2CommitLatency   []int64
-	ctxCommitLatency      []int64
-	normalTxCommitLatency []int64
+	totTxLatencyEpoch                   []float64 // record the Transaction_Confirm_Latency in each epoch, only for excuted txs (normal txs & relay2 txs)
+	relay1CommitLatency                 []int64
+	relay2CommitLatency                 []int64
+	crossShardFunctionCallCommitLatency []int64
+	innerSCTxCommitLatency              []int64
+	ctxCommitLatency                    []int64
+	normalTxCommitLatency               []int64
 
 	relay1CommitTS map[string]time.Time
 
-	normalTxNum []int
-	relay1TxNum []int
-	relay2TxNum []int
-	txNum       []float64 // record the txNumber in each epoch
+	normalTxNum                 []int
+	relay1TxNum                 []int
+	relay2TxNum                 []int
+	crossShardFunctionCallTxNum []float64
+	innerSCTxNum                []int
+	txNum                       []float64 // record the txNumber in each epoch
 }
 
 func NewTestModule_TCL_Relay() *TestModule_TCL_Relay {
@@ -29,17 +33,21 @@ func NewTestModule_TCL_Relay() *TestModule_TCL_Relay {
 		epochID:           -1,
 		totTxLatencyEpoch: make([]float64, 0),
 
-		relay1CommitLatency:   make([]int64, 0),
-		relay2CommitLatency:   make([]int64, 0),
-		normalTxCommitLatency: make([]int64, 0),
-		ctxCommitLatency:      make([]int64, 0),
+		relay1CommitLatency:                 make([]int64, 0),
+		relay2CommitLatency:                 make([]int64, 0),
+		crossShardFunctionCallCommitLatency: make([]int64, 0),
+		normalTxCommitLatency:               make([]int64, 0),
+		innerSCTxCommitLatency:              make([]int64, 0),
+		ctxCommitLatency:                    make([]int64, 0),
 
 		relay1CommitTS: make(map[string]time.Time),
 
-		normalTxNum: make([]int, 0),
-		relay1TxNum: make([]int, 0),
-		relay2TxNum: make([]int, 0),
-		txNum:       make([]float64, 0),
+		normalTxNum:                 make([]int, 0),
+		relay1TxNum:                 make([]int, 0),
+		relay2TxNum:                 make([]int, 0),
+		crossShardFunctionCallTxNum: make([]float64, 0),
+		innerSCTxNum:                make([]int, 0),
+		txNum:                       make([]float64, 0),
 	}
 }
 
@@ -63,12 +71,16 @@ func (tml *TestModule_TCL_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 
 		tml.relay1CommitLatency = append(tml.relay1CommitLatency, 0)
 		tml.relay2CommitLatency = append(tml.relay2CommitLatency, 0)
+		tml.crossShardFunctionCallCommitLatency = append(tml.crossShardFunctionCallCommitLatency, 0)
+		tml.innerSCTxCommitLatency = append(tml.innerSCTxCommitLatency, 0)
 		tml.normalTxCommitLatency = append(tml.normalTxCommitLatency, 0)
 		tml.ctxCommitLatency = append(tml.ctxCommitLatency, 0)
 
 		tml.relay1TxNum = append(tml.relay1TxNum, 0)
 		tml.relay2TxNum = append(tml.relay2TxNum, 0)
 		tml.normalTxNum = append(tml.normalTxNum, 0)
+		tml.crossShardFunctionCallTxNum = append(tml.crossShardFunctionCallTxNum, 0)
+		tml.innerSCTxNum = append(tml.innerSCTxNum, 0)
 
 		tml.epochID++
 	}
@@ -76,7 +88,18 @@ func (tml *TestModule_TCL_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 	tml.normalTxNum[epochid] += len(b.InnerShardTxs)
 	tml.relay1TxNum[epochid] += len(b.Relay1Txs)
 	tml.relay2TxNum[epochid] += len(b.Relay2Txs)
+
+	var currentCrossShardFunctionCallTxNum float64
+	for _, tx := range b.CrossShardFunctionCall {
+		if tx.DivisionCount > 0 {
+			tml.crossShardFunctionCallTxNum[epochid] += 1 / float64(tx.DivisionCount)
+			currentCrossShardFunctionCallTxNum += 1 / float64(tx.DivisionCount)
+		}
+	}
+	tml.innerSCTxNum[epochid] += len(b.InnerSCTxs)
+
 	tml.txNum[epochid] += float64(len(b.InnerShardTxs)) + float64(len(b.Relay1Txs)+len(b.Relay2Txs))/2
+	tml.txNum[epochid] += currentCrossShardFunctionCallTxNum + float64(len(b.InnerSCTxs))
 
 	// relay1 tx
 	for _, r1tx := range b.Relay1Txs {
@@ -99,6 +122,20 @@ func (tml *TestModule_TCL_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 		tml.totTxLatencyEpoch[epochid] += mTime.Sub(ntx.Time).Seconds()
 
 		tml.normalTxCommitLatency[epochid] += int64(mTime.Sub(ntx.Time).Milliseconds())
+	}
+
+	// cross shard function call tx
+	for _, cftx := range b.CrossShardFunctionCall {
+		tml.totTxLatencyEpoch[epochid] += mTime.Sub(cftx.Time).Seconds() / float64(cftx.DivisionCount)
+
+		tml.crossShardFunctionCallCommitLatency[epochid] += int64(mTime.Sub(cftx.Time).Milliseconds())
+	}
+
+	// inner shard contract tx
+	for _, sctx := range b.InnerSCTxs {
+		tml.totTxLatencyEpoch[epochid] += mTime.Sub(sctx.Time).Seconds()
+
+		tml.innerSCTxCommitLatency[epochid] += int64(mTime.Sub(sctx.Time).Milliseconds())
 	}
 }
 

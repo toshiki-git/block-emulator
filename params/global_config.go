@@ -43,11 +43,16 @@ var (
 
 	ReconfigTimeGap = 50 // The time gap between epochs. This variable is only used in CLPA / CLPA_Broker now. (unit: second)
 
-	// Proposal
+	// Proposal(graph)
 	InternalTxFile = `./selectedTxs_1000K.csv` // The internal transaction data path
 	MaxUnion       = 1000
 	MaxNodeUnion   = 100
 	IsMerge        = 1 // 1: merge, 0: not merge
+
+	// Proposal(smart contract)
+	AccountNumInContract              = 10000 // The number of accounts in a shard
+	ContractBatchProcessingIntervalMs = 1000  // ref: StartBatchProcessing()
+	ContractBatchSize                 = 2000  // ref: StartBatchProcessing()
 )
 
 // network layer
@@ -89,6 +94,10 @@ type globalConfig struct {
 	MaxUnion       int    `json:"MaxUnion"`
 	MaxNodeUnion   int    `json:"MaxNodeUnion"`
 	IsMerge        int    `json:"IsMerge"`
+
+	AccountNumInContract              int `json:"AccountNumInContract"`
+	ContractBatchProcessingIntervalMs int `json:"ContractBatchProcessingIntervalMs"`
+	ContractBatchSize                 int `json:"ContractBatchSize"`
 }
 
 func ReadConfigFile() {
@@ -144,4 +153,8 @@ func ReadConfigFile() {
 	MaxUnion = config.MaxUnion
 	MaxNodeUnion = config.MaxNodeUnion
 	IsMerge = config.IsMerge
+
+	AccountNumInContract = config.AccountNumInContract
+	ContractBatchProcessingIntervalMs = config.ContractBatchProcessingIntervalMs
+	ContractBatchSize = config.ContractBatchSize
 }

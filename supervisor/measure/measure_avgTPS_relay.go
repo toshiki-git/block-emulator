@@ -73,7 +73,9 @@ func (tat *TestModule_avgTPS_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg)
 	// modify the local epoch data
 	tat.excutedTxNum[epochid] += float64(r1TxNum+r2TxNum) / 2
 	tat.excutedTxNum[epochid] += float64(len(b.InnerShardTxs))
-	tat.excutedTxNum[epochid] += float64(len(b.CrossShardFunctionCall)) //TODO: Internal Txをどうカウントするか
+	for _, tx := range b.CrossShardFunctionCall {
+		tat.excutedTxNum[epochid] += 1 / float64(tx.DivisionCount)
+	}
 	tat.excutedTxNum[epochid] += float64(len(b.InnerSCTxs))
 
 	tat.normalTxNum[epochid] += len(b.InnerShardTxs)

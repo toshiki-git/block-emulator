@@ -65,7 +65,9 @@ func (ttnc *TestTxNumCount_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 
 	ttnc.txNum[epochid] += float64(len(b.InnerShardTxs)) + float64(len(b.Relay1Txs)+len(b.Relay2Txs))/2
 	ttnc.txNum[epochid] += float64(len(b.InnerSCTxs))
-	ttnc.txNum[epochid] += float64(len(b.CrossShardFunctionCall)) //TODO: Internal Txをどうカウントするか
+	for _, tx := range b.CrossShardFunctionCall {
+		ttnc.txNum[epochid] += 1 / float64(tx.DivisionCount)
+	}
 }
 
 func (ttnc *TestTxNumCount_Relay) HandleExtraMessage([]byte) {}
