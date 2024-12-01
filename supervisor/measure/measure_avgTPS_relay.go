@@ -18,16 +18,18 @@ type TestModule_avgTPS_Relay struct {
 	crossShardFunctionCallTxNum []int
 	innerSCTxNum                []int
 
-	startTime []time.Time // record when the epoch starts
-	endTime   []time.Time // record when the epoch ends
+	startTime         []time.Time // record when the epoch starts
+	endTime           []time.Time // record when the epoch ends
+	clpaExecutionTime []time.Duration
 }
 
 func NewTestModule_avgTPS_Relay() *TestModule_avgTPS_Relay {
 	return &TestModule_avgTPS_Relay{
-		epochID:      -1,
-		excutedTxNum: make([]float64, 0),
-		startTime:    make([]time.Time, 0),
-		endTime:      make([]time.Time, 0),
+		epochID:           -1,
+		excutedTxNum:      make([]float64, 0),
+		startTime:         make([]time.Time, 0),
+		endTime:           make([]time.Time, 0),
+		clpaExecutionTime: make([]time.Duration, 0),
 
 		normalTxNum: make([]int, 0),
 		relay1TxNum: make([]int, 0),
@@ -44,6 +46,10 @@ func (tat *TestModule_avgTPS_Relay) OutputMetricName() string {
 
 // add the number of excuted txs, and change the time records
 func (tat *TestModule_avgTPS_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) {
+	if b.CLPAResult != nil {
+		tat.clpaExecutionTime = append(tat.clpaExecutionTime, b.CLPAResult.ExecutionTime)
+	}
+
 	if b.BlockBodyLength == 0 { // empty block
 		return
 	}
@@ -104,6 +110,12 @@ func (tat *TestModule_avgTPS_Relay) OutputRecord() (perEpochTPS []float64, total
 	totalTxNum := 0.0
 	eTime := time.Now()
 	lTime := time.Time{}
+
+	totalExecutionTime := time.Duration(0)
+	for _, et := range tat.clpaExecutionTime {
+		totalExecutionTime += et
+	}
+
 	for eid, exTxNum := range tat.excutedTxNum {
 		timeGap := tat.endTime[eid].Sub(tat.startTime[eid]).Seconds()
 		perEpochTPS[eid] = exTxNum / timeGap
@@ -115,7 +127,7 @@ func (tat *TestModule_avgTPS_Relay) OutputRecord() (perEpochTPS []float64, total
 			lTime = tat.endTime[eid]
 		}
 	}
-	totalTPS = totalTxNum / (lTime.Sub(eTime).Seconds())
+	totalTPS = totalTxNum / (lTime.Sub(eTime).Seconds() + totalExecutionTime.Seconds())
 	return
 }
 
@@ -131,12 +143,21 @@ func (tat *TestModule_avgTPS_Relay) writeToCSV() {
 		"Inner Shard SC tx # in this epoch",
 		"Epoch start time",
 		"Epoch end time",
+		"CLPA execution time",
 		"Avg. TPS of this epoch",
 	}
 	measureVals := make([][]string, 0)
 
 	for eid, exTxNum := range tat.excutedTxNum {
 		timeGap := tat.endTime[eid].Sub(tat.startTime[eid]).Seconds()
+		var clpaExecutionTimeStr string
+
+		if eid < len(tat.clpaExecutionTime) {
+			clpaExecutionTimeStr = tat.clpaExecutionTime[eid].String()
+		} else {
+			clpaExecutionTimeStr = time.Duration(0).String()
+		}
+
 		csvLine := []string{
 			strconv.Itoa(eid),
 			strconv.FormatFloat(exTxNum, 'f', 8, 64),
@@ -147,6 +168,7 @@ func (tat *TestModule_avgTPS_Relay) writeToCSV() {
 			strconv.Itoa(tat.innerSCTxNum[eid]),
 			strconv.FormatInt(tat.startTime[eid].UnixMilli(), 10),
 			strconv.FormatInt(tat.endTime[eid].UnixMilli(), 10),
+			clpaExecutionTimeStr,
 			strconv.FormatFloat(exTxNum/timeGap, 'f', 8, 64),
 		}
 		measureVals = append(measureVals, csvLine)
