@@ -111,7 +111,7 @@ func (bc *BlockChain) GetUpdateStatusTrie(txs []*core.Transaction) common.Hash {
 		// for smart contract tx
 		if tx.HasContract {
 			for _, addr := range tx.SmartContractAddress {
-				fmt.Printf("txhash: %x, sc addr: %s\n", tx.TxHash, addr)
+				// fmt.Printf("txhash: %x, sc addr: %s\n", tx.TxHash, addr)
 				state_enc, _ := st.Get([]byte(addr))
 				var state *core.AccountState
 				if state_enc == nil {
@@ -143,7 +143,7 @@ func (bc *BlockChain) GetUpdateStatusTrie(txs []*core.Transaction) common.Hash {
 		if !tx.HasContract {
 			if !tx.Relayed && (bc.Get_PartitionMap(tx.Sender) == bc.ChainConfig.ShardID || tx.HasBroker) {
 				// senderIn = true
-				fmt.Printf("the sender %s is in this shard %d, \n", tx.Sender, bc.ChainConfig.ShardID)
+				// fmt.Printf("the sender %s is in this shard %d, \n", tx.Sender, bc.ChainConfig.ShardID)
 				// modify local accountstate
 				s_state_enc, _ := st.Get([]byte(tx.Sender))
 				var s_state *core.AccountState
@@ -172,7 +172,7 @@ func (bc *BlockChain) GetUpdateStatusTrie(txs []*core.Transaction) common.Hash {
 			// Relayの場合でshardが違う場合は: bc.Get_PartitionMap(tx.Recipient) == bc.ChainConfig.ShardIDがfalseになるので、残高は増えない
 			// Relayedがtrueの場合はtrueになるので、そこで残高を増やす
 			if bc.Get_PartitionMap(tx.Recipient) == bc.ChainConfig.ShardID || tx.HasBroker {
-				fmt.Printf("the recipient %s is in this shard %d, \n", tx.Recipient, bc.ChainConfig.ShardID)
+				// fmt.Printf("the recipient %s is in this shard %d, \n", tx.Recipient, bc.ChainConfig.ShardID)
 				// recipientIn = true
 				// modify local state
 				r_state_enc, _ := st.Get([]byte(tx.Recipient))

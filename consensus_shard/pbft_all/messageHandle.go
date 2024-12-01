@@ -274,6 +274,7 @@ func (p *PbftConsensusNode) handleCommit(content []byte) {
 		}
 
 		p.pbftStage.Store(1)
+		p.pl.Plog.Println("pbftのステージが1に戻りました")
 		p.lastCommitTime.Store(time.Now().UnixMilli())
 
 		// if this node is a main node, then unlock the sequencelock

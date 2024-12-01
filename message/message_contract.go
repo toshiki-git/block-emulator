@@ -20,7 +20,7 @@ type CrossShardFunctionRequest struct {
 	TypeTraceAddress   string
 	Tx                 *core.Transaction
 	ProcessedMap       map[string]bool // key: TypeTraceAddress, value: 処理済みかどうか
-	VisitedShards      map[uint64]bool // 過去に通過したシャードIDを記録
+	VisitedContracts   map[string]bool // 過去に通過したコントラクトのアドレスを記録
 }
 
 type CrossShardFunctionResponse struct {
@@ -38,5 +38,5 @@ type CrossShardFunctionResponse struct {
 	TypeTraceAddress   string
 	Tx                 *core.Transaction
 	ProcessedMap       map[string]bool
-	VisitedShards      map[uint64]bool // 過去に通過したシャードIDを記録
+	VisitedContracts   map[string]bool // 過去に通過したコントラクトのアドレスを記録
 }

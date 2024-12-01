@@ -21,7 +21,7 @@ type Transaction struct {
 	Value     *big.Int
 	TxHash    []byte
 
-	Time time.Time // TimeStamp the tx proposed.
+	Time time.Time // TimeStamp the tx proposed. (supervisorにtxが生成された時間)
 
 	// used in transaction relaying
 	Relayed bool
@@ -35,12 +35,11 @@ type Transaction struct {
 	// Fields for smart contract transactions
 	HasContract          bool
 	InternalTxs          []*InternalTransaction
-	LastItxProcessedIdx  uint
-	IsTxProcessed        bool
 	IsCrossShardFuncCall bool
 	IsAllInner           bool
-	TypeTraceAddress     string
 	SmartContractAddress []utils.Address
+	RequestID            string
+	DivisionCount        int
 }
 
 func (tx *Transaction) PrintTx() string {

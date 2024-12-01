@@ -213,13 +213,15 @@ func (pcm *ProposalCommitteeModule) data2txWithContract(data []string, nonce uin
 		tx.HasContract = true
 		if internalTxs, ok := pcm.internalTxMap[txHash]; ok {
 			tx.InternalTxs = internalTxs
+			delete(pcm.internalTxMap, txHash)
 		}
-		// build treeこれはpbftノード側でやる
-		// tx.RootCallNode = utils.BuildExecutionCallTree(tx.TypeTraceAddresses())
 
-		if len(tx.InternalTxs) > 300 {
+		if len(tx.InternalTxs) > 30 {
 			pcm.sl.Slog.Printf("Internal TXが多すぎます。txHash: %s, InternalTxs: %d\n", txHash, len(tx.InternalTxs))
-			//return &core.Transaction{}, false
+			if params.IsSkipLongInternalTx == 1 {
+				pcm.sl.Slog.Println("Internal TXをスキップします。")
+				return &core.Transaction{}, false
+			}
 		}
 		return tx, true
 	}

@@ -39,6 +39,8 @@ type AccountStateAndTx struct {
 	Addrs        []string
 	AccountState []*core.AccountState
 	Txs          []*core.Transaction
+	Requests     []*CrossShardFunctionRequest
+	Responses    []*CrossShardFunctionResponse
 	FromShard    uint64
 }
 

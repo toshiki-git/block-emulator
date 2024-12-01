@@ -27,19 +27,6 @@ func NewTxPool() *TxPool {
 	}
 }
 
-func (txpool *TxPool) CountProcessedTxs() int {
-	txpool.lock.Lock()
-	defer txpool.lock.Unlock()
-
-	processedTxsCount := 0
-	for _, tx := range txpool.TxQueue {
-		if tx.IsTxProcessed {
-			processedTxsCount++
-		}
-	}
-	return processedTxsCount
-}
-
 // Add a transaction to the pool (consider the queue only)
 func (txpool *TxPool) AddTx2Pool(tx *Transaction) {
 	txpool.lock.Lock()

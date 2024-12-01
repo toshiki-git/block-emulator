@@ -53,6 +53,7 @@ var (
 	AccountNumInContract              = 10000 // The number of accounts in a shard
 	ContractBatchProcessingIntervalMs = 1000  // ref: StartBatchProcessing()
 	ContractBatchSize                 = 2000  // ref: StartBatchProcessing()
+	IsSkipLongInternalTx              = 0     // 1: skip long internal tx, 0: not skip long internal tx
 )
 
 // network layer
@@ -98,6 +99,7 @@ type globalConfig struct {
 	AccountNumInContract              int `json:"AccountNumInContract"`
 	ContractBatchProcessingIntervalMs int `json:"ContractBatchProcessingIntervalMs"`
 	ContractBatchSize                 int `json:"ContractBatchSize"`
+	IsSkipLongInternalTx              int `json:"IsSkipLongInternalTx"`
 }
 
 func ReadConfigFile() {
@@ -157,4 +159,5 @@ func ReadConfigFile() {
 	AccountNumInContract = config.AccountNumInContract
 	ContractBatchProcessingIntervalMs = config.ContractBatchProcessingIntervalMs
 	ContractBatchSize = config.ContractBatchSize
+	IsSkipLongInternalTx = config.IsSkipLongInternalTx
 }

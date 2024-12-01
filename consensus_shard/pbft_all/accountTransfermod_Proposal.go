@@ -112,11 +112,12 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 		// fetch transactions to it, after the transactions is fetched, delete it in the pool
 		txSend := make([]*core.Transaction, 0)
 		firstPtr := 0
+		// TxPoolの中から移動するべきTXをピックアップ
 		for secondPtr := 0; secondPtr < len(cphm.pbftNode.CurChain.Txpool.TxQueue); secondPtr++ {
 			ptx := cphm.pbftNode.CurChain.Txpool.TxQueue[secondPtr]
 
 			// Internal TXじゃないとき
-			if !ptx.IsTxProcessed {
+			if !ptx.HasContract {
 				// if this is a normal transaction or ctx1 before re-sharding && the addr is correspond
 				// まだRelayedされてないときはSender側のシャードにTXを移動
 				_, ok1 := addrSet[ptx.Sender]
@@ -134,28 +135,66 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 			}
 
 			// Internal TXのとき
-			if ptx.IsTxProcessed && ptx.HasContract {
-				// if this is a normal transaction or ctx1 before re-sharding && the addr is correspond
-				// まだRelayedされてないときはSender側のシャードにTXを移動
-
-				InternalTxIdx := ptx.LastItxProcessedIdx
-				// fmt.Printf("sendAccounts_and_Txs(): %v \n", ptx.InternalTxs[InternalTxIdx])
-				_, ok1 := addrSet[ptx.InternalTxs[InternalTxIdx].Sender]
-				condition1 := ok1 && !ptx.InternalTxs[InternalTxIdx].Relayed
-				// if this tx is ctx2
-				// RelayedされているときはRecipient側のシャードにTXを移動
-				_, ok2 := addrSet[ptx.InternalTxs[InternalTxIdx].Recipient]
-				condition2 := ok2 && ptx.InternalTxs[InternalTxIdx].Relayed
-				if condition1 || condition2 {
-					txSend = append(txSend, ptx)
-				} else {
-					cphm.pbftNode.CurChain.Txpool.TxQueue[firstPtr] = ptx
-					firstPtr++
+			if ptx.HasContract {
+				if ptx.IsCrossShardFuncCall {
+					_, ok := addrSet[ptx.Recipient]
+					if ok {
+						txSend = append(txSend, ptx)
+					} else {
+						cphm.pbftNode.CurChain.Txpool.TxQueue[firstPtr] = ptx
+						firstPtr++
+					}
 				}
+
+				if ptx.IsAllInner {
+					_, ok := addrSet[ptx.Recipient]
+					if ok {
+						txSend = append(txSend, ptx)
+					} else {
+						cphm.pbftNode.CurChain.Txpool.TxQueue[firstPtr] = ptx
+						firstPtr++
+					}
+				}
+
 			}
 		}
+
 		cphm.pbftNode.CurChain.Txpool.TxQueue = cphm.pbftNode.CurChain.Txpool.TxQueue[:firstPtr]
 		cphm.pbftNode.pl.Plog.Printf("sendAccounts_and_Txs(): シャード %d に %d 個のトランザクションを送信\n", i, len(txSend))
+
+		// ここにShard iに移動するContract Request Poolを送信する処理を追加する
+		requestSend := make([]*message.CrossShardFunctionRequest, 0)
+		firstPtr = 0
+		for secondPtr := 0; secondPtr < len(cphm.cfcpm.RequestPool); secondPtr++ {
+			request := cphm.cfcpm.RequestPool[secondPtr]
+
+			_, ok := addrSet[request.Recepient]
+			if ok {
+				requestSend = append(requestSend, request)
+			} else {
+				cphm.cfcpm.RequestPool[firstPtr] = request
+				firstPtr++
+			}
+		}
+		cphm.cfcpm.RequestPool = cphm.cfcpm.RequestPool[:firstPtr]
+		cphm.pbftNode.pl.Plog.Printf("sendAccounts_and_Txs(): シャード %d に %d 個のCrossShardFuctionCallRequestを送信\n", i, len(requestSend))
+
+		// ここにShard iに移動するContract Request Poolを送信する処理を追加する
+		responseSend := make([]*message.CrossShardFunctionResponse, 0)
+		firstPtr = 0
+		for secondPtr := 0; secondPtr < len(cphm.cfcpm.ResponsePool); secondPtr++ {
+			response := cphm.cfcpm.ResponsePool[secondPtr]
+
+			_, ok := addrSet[response.Recipient]
+			if ok {
+				responseSend = append(responseSend, response)
+			} else {
+				cphm.cfcpm.ResponsePool[firstPtr] = response
+				firstPtr++
+			}
+		}
+		cphm.cfcpm.ResponsePool = cphm.cfcpm.ResponsePool[:firstPtr]
+		cphm.pbftNode.pl.Plog.Printf("sendAccounts_and_Txs(): シャード %d に %d 個のCrossShardFuctionCallResponseを送信\n", i, len(responseSend))
 
 		cphm.pbftNode.pl.Plog.Printf("The txSend to shard %d is generated \n", i)
 		ast := message.AccountStateAndTx{
@@ -163,6 +202,8 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 			AccountState: asSend,
 			FromShard:    cphm.pbftNode.ShardID,
 			Txs:          txSend,
+			Requests:     requestSend,
+			Responses:    responseSend,
 		}
 		aByte, err := json.Marshal(ast)
 		if err != nil {
@@ -187,20 +228,28 @@ func (cphm *ProposalPbftInsideExtraHandleMod) getCollectOver() bool {
 func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message.Request) {
 	cphm.pbftNode.pl.Plog.Printf("S%dN%d : begin partition proposing\n", cphm.pbftNode.ShardID, cphm.pbftNode.NodeID)
 	// add all data in pool into the set
-	for _, at := range cphm.cdm.AccountStateTx {
+	for shradID, at := range cphm.cdm.AccountStateTx {
 		for i, addr := range at.Addrs {
 			cphm.cdm.ReceivedNewAccountState[addr] = at.AccountState[i]
 		}
 		cphm.cdm.ReceivedNewTx = append(cphm.cdm.ReceivedNewTx, at.Txs...)
+
+		// TODO: ReceivedNewTxみたいにエラーハンドリングが必要
+		cphm.cfcpm.AddRequests(at.Requests)
+		cphm.pbftNode.pl.Plog.Println("proposePartition():", len(at.Requests), "個のContract Request追加")
+		cphm.pbftNode.pl.Plog.Printf("proposePartition(): %d 個のContract Request追加 From %d\n", len(at.Requests), shradID)
+		cphm.cfcpm.AddResponses(at.Responses)
+		cphm.pbftNode.pl.Plog.Println("proposePartition():", len(at.Responses), "個のContract Response追加")
 	}
 	// propose, send all txs to other nodes in shard
 	cphm.pbftNode.pl.Plog.Println("The number of ReceivedNewTx: ", len(cphm.cdm.ReceivedNewTx))
+
 	for _, tx := range cphm.cdm.ReceivedNewTx {
 		//TODO: ここで発生しているエラーを解消する
 
 		// Internal TXじゃないとき
-		if !tx.IsTxProcessed {
-			var sender string
+		if !tx.HasContract {
+			/* var sender string
 			if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.Sender]; ok {
 				sender = mergedVertex.Addr
 			} else {
@@ -219,11 +268,12 @@ func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message
 			}
 			if tx.Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][recepient] != cphm.pbftNode.ShardID {
 				log.Panic("error tx: recipient is not in the shard")
-			}
+			} */
 		}
 
-		if tx.IsTxProcessed && tx.HasContract {
-			InternalTxIdx := tx.LastItxProcessedIdx
+		if tx.HasContract {
+			// これはエラーハンドリング
+			/* InternalTxIdx := tx.LastItxProcessedIdx
 			var iSender string
 			if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.InternalTxs[InternalTxIdx].Sender]; ok {
 				iSender = mergedVertex.Addr
@@ -253,7 +303,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message
 				)
 				cphm.pbftNode.pl.Plog.Println(tx.InternalTxs[InternalTxIdx].ParentTxHash)
 				log.Panic("error itx: recipient is not in the shard")
-			}
+			} */
 		}
 
 	}
@@ -266,6 +316,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message
 		atmaddr = append(atmaddr, key)
 		atmAs = append(atmAs, val)
 	}
+	// これにat.Requestsとresponseを追加する
 	atm := message.AccountTransferMsg{
 		ModifiedMap:     cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound],
 		MergedContracts: cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound],

@@ -86,6 +86,7 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinPrepare(pmsg *message.Prep
 
 // the operation in commit.
 func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commit) bool {
+	start := time.Now()
 	r := pphm.pbftNode.requestPool[string(cmsg.Digest)]
 	// requestType ...
 	if r.RequestType == message.PartitionReq {
@@ -99,7 +100,9 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 	block := core.DecodeB(r.Msg.Content)
 	pphm.pbftNode.pl.Plog.Printf("S%dN%d : adding the block %d...now height = %d \n", pphm.pbftNode.ShardID, pphm.pbftNode.NodeID, block.Header.Number, pphm.pbftNode.CurChain.CurrentBlock.Header.Number)
 	fmt.Printf("State Root in HandleinCommit(): %s\n", common.BytesToHash(pphm.pbftNode.CurChain.CurrentBlock.Header.StateRoot))
+	startAddBlock := time.Now()
 	pphm.pbftNode.CurChain.AddBlock(block)
+	pphm.pbftNode.pl.Plog.Printf("[DEBUG] AddBlock完了: 所要時間=%s", time.Since(startAddBlock))
 	pphm.pbftNode.pl.Plog.Printf("S%dN%d : added the block %d... \n", pphm.pbftNode.ShardID, pphm.pbftNode.NodeID, block.Header.Number)
 	pphm.pbftNode.CurChain.PrintBlockChain()
 
@@ -115,7 +118,9 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 		crossShardFunctionCall := make([]*core.Transaction, 0)
 		innerSCTxs := make([]*core.Transaction, 0)
 
+		loopTime := time.Now()
 		for _, tx := range block.Body {
+
 			ssid := pphm.pbftNode.CurChain.Get_PartitionMap(tx.Sender)
 			rsid := pphm.pbftNode.CurChain.Get_PartitionMap(tx.Recipient)
 			if !tx.HasContract {
@@ -141,10 +146,8 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 				} else {
 					if tx.Relayed {
 						relay2Txs = append(relay2Txs, tx)
-						tx.IsTxProcessed = true
 					} else {
 						innerShardTxs = append(innerShardTxs, tx)
-						tx.IsTxProcessed = true
 					}
 				}
 			}
@@ -153,13 +156,21 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 			if tx.HasContract {
 				if tx.IsCrossShardFuncCall {
 					crossShardFunctionCall = append(crossShardFunctionCall, tx)
-				} else {
+					err := pphm.cfcpm.SClock.UnlockAllByRequestID(tx.RequestID)
+
+					if err != nil {
+						// TODO: Unlockするのは1シャードだけにする
+						// fmt.Println(err)
+					}
+				} else if tx.IsAllInner {
 					// Internal TXを持つが、すべて同じshard内で完結(txも含め)する場合
 					innerSCTxs = append(innerSCTxs, tx)
+				} else {
+					fmt.Println("分類できないInternal TXがあります。")
 				}
 			}
-
 		}
+		pphm.pbftNode.pl.Plog.Printf("[DEBUG] loopTime: %s", time.Since(loopTime))
 
 		// send relay txs
 		if params.RelayWithMerkleProof == 1 {
@@ -240,6 +251,8 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 		pphm.pbftNode.writeCSVline(metricName, metricVal)
 		pphm.pbftNode.CurChain.Txpool.GetUnlocked()
 	}
+	elapsed := time.Since(start)
+	pphm.pbftNode.pl.Plog.Printf("HandleinCommitにかかった時間は %s \n", elapsed)
 	return true
 }
 

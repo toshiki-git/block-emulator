@@ -5,10 +5,12 @@ import (
 	"blockEmulator/core"
 	"blockEmulator/message"
 	"blockEmulator/networks"
+	"blockEmulator/params"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 )
 
@@ -114,15 +116,19 @@ func (prom *ProposalRelayOutsideModule) handleAccountStateAndTxMsg(content []byt
 	at := new(message.AccountStateAndTx)
 	err := json.Unmarshal(content, at)
 	if err != nil {
-		log.Panic()
+		log.Panic(err) // エラーの詳細を出力
 	}
+
+	// マップへの書き込みを排他制御
+	prom.cdm.CollectLock.Lock()
+	defer prom.cdm.CollectLock.Unlock()
+
 	prom.cdm.AccountStateTx[at.FromShard] = at
 	prom.pbftNode.pl.Plog.Printf("S%dN%d has added the accoutStateandTx from %d to pool\n", prom.pbftNode.ShardID, prom.pbftNode.NodeID, at.FromShard)
 
+	// 全シャード分のデータが揃った場合の処理
 	if len(prom.cdm.AccountStateTx) == int(prom.pbftNode.pbftChainConfig.ShardNums)-1 {
-		prom.cdm.CollectLock.Lock()
 		prom.cdm.CollectOver = true
-		prom.cdm.CollectLock.Unlock()
 		prom.pbftNode.pl.Plog.Printf("S%dN%d has added all accoutStateandTx~~~\n", prom.pbftNode.ShardID, prom.pbftNode.NodeID)
 	}
 }
@@ -162,9 +168,8 @@ func (prom *ProposalRelayOutsideModule) processContractInject(txs []*core.Transa
 
 		if hasDiffShard {
 			destShardID := prom.pbftNode.CurChain.Get_PartitionMap(differentShardNode.Recipient)
-			visitedShards := make(map[uint64]bool)
-			visitedShards[destShardID] = true
-			visitedShards[prom.pbftNode.ShardID] = true
+			visitedContracts := make(map[string]bool)
+			visitedContracts[differentShardNode.Recipient] = true
 
 			request := &message.CrossShardFunctionRequest{
 				OriginalSender:     tx.Sender,
@@ -181,7 +186,7 @@ func (prom *ProposalRelayOutsideModule) processContractInject(txs []*core.Transa
 				TypeTraceAddress:   differentShardNode.TypeTraceAddress,
 				Tx:                 tx,
 				ProcessedMap:       processedMap,
-				VisitedShards:      visitedShards,
+				VisitedContracts:   visitedContracts,
 			}
 			requestsByShard[destShardID] = append(requestsByShard[destShardID], request)
 		} else {
@@ -196,12 +201,9 @@ func (prom *ProposalRelayOutsideModule) processContractInject(txs []*core.Transa
 func (prom *ProposalRelayOutsideModule) processBatchRequests(requests []*message.CrossShardFunctionRequest) {
 	requestsByShard := make(map[uint64][]*message.CrossShardFunctionRequest)
 	responseByShard := make(map[uint64][]*message.CrossShardFunctionResponse)
+	skipCount := 0
 
 	for _, req := range requests {
-		if req.VisitedShards == nil {
-			prom.pbftNode.pl.Plog.Println("processContractRequests: VisitedShards が nil です。")
-			req.VisitedShards = make(map[uint64]bool)
-		}
 		root := core.BuildExecutionCallTree(req.Tx, req.ProcessedMap)
 		currentCallNode := root.FindNodeByTTA(req.TypeTraceAddress)
 
@@ -211,10 +213,35 @@ func (prom *ProposalRelayOutsideModule) processBatchRequests(requests []*message
 		}
 
 		if currentCallNode.IsLeaf {
-			req.ProcessedMap[currentCallNode.TypeTraceAddress] = true
+			randomAccountInSC := GenerateRandomString(params.AccountNumInContract)
+			isAccountLocked := prom.cfcpm.SClock.IsAccountLocked(currentCallNode.Recipient, randomAccountInSC, req.RequestID)
+			if isAccountLocked {
+				skipCount++
+				prom.cfcpm.AddRequest(req)
+				fmt.Println("ロックされてます", currentCallNode.Recipient, randomAccountInSC, req.RequestID)
+				continue
+			}
+
+			switch currentCallNode.CallType {
+			case "call":
+				err := prom.cfcpm.SClock.LockAccount(currentCallNode.Recipient, randomAccountInSC, req.RequestID)
+				if err != nil {
+					fmt.Println(err)
+				}
+			case "staticcall":
+				// 何かしらの処理
+			case "delegatecall":
+				err := prom.cfcpm.SClock.LockAccount(currentCallNode.Sender, randomAccountInSC, req.RequestID)
+				if err != nil {
+					fmt.Println(err)
+				}
+			default:
+				// 何かしらの処理
+			}
+
 			destShardID := req.SourceShardID
-			req.VisitedShards[destShardID] = true
-			req.VisitedShards[prom.pbftNode.ShardID] = true
+			req.ProcessedMap[currentCallNode.TypeTraceAddress] = true
+			req.VisitedContracts[currentCallNode.Recipient] = true
 
 			response := &message.CrossShardFunctionResponse{
 				OriginalSender:     req.OriginalSender,
@@ -231,7 +258,7 @@ func (prom *ProposalRelayOutsideModule) processBatchRequests(requests []*message
 				TypeTraceAddress:   currentCallNode.TypeTraceAddress, // 子のTypeTraceAddressをそのままコピー
 				Tx:                 req.Tx,
 				ProcessedMap:       req.ProcessedMap,
-				VisitedShards:      req.VisitedShards,
+				VisitedContracts:   req.VisitedContracts,
 			}
 			responseByShard[destShardID] = append(responseByShard[destShardID], response)
 		} else {
@@ -243,8 +270,7 @@ func (prom *ProposalRelayOutsideModule) processBatchRequests(requests []*message
 
 			if hasDiffShard {
 				destShardID := prom.pbftNode.CurChain.Get_PartitionMap(differentShardNode.Recipient)
-				req.VisitedShards[destShardID] = true
-				req.VisitedShards[prom.pbftNode.ShardID] = true
+				req.VisitedContracts[differentShardNode.Recipient] = true
 
 				request := &message.CrossShardFunctionRequest{
 					OriginalSender:     req.OriginalSender,
@@ -261,14 +287,13 @@ func (prom *ProposalRelayOutsideModule) processBatchRequests(requests []*message
 					TypeTraceAddress:   differentShardNode.TypeTraceAddress,
 					Tx:                 req.Tx,
 					ProcessedMap:       req.ProcessedMap,
-					VisitedShards:      req.VisitedShards,
+					VisitedContracts:   req.VisitedContracts,
 				}
 				requestsByShard[destShardID] = append(requestsByShard[destShardID], request)
 			} else {
 				req.ProcessedMap[currentCallNode.TypeTraceAddress] = true
 				destShardID := req.SourceShardID
-				req.VisitedShards[destShardID] = true
-				req.VisitedShards[prom.pbftNode.ShardID] = true
+				req.VisitedContracts[currentCallNode.Recipient] = true
 
 				response := &message.CrossShardFunctionResponse{
 					OriginalSender:     req.OriginalSender,
@@ -285,12 +310,14 @@ func (prom *ProposalRelayOutsideModule) processBatchRequests(requests []*message
 					TypeTraceAddress:   currentCallNode.TypeTraceAddress, // 子のTypeTraceAddressをそのままコピー
 					Tx:                 req.Tx,
 					ProcessedMap:       req.ProcessedMap,
-					VisitedShards:      req.VisitedShards,
+					VisitedContracts:   req.VisitedContracts,
 				}
 				responseByShard[destShardID] = append(responseByShard[destShardID], response)
 			}
 		}
 	}
+
+	prom.pbftNode.pl.Plog.Printf("processContractRequests: skipCount %d", skipCount)
 
 	// シャードごとにリクエストを送信
 	prom.sendRequests(requestsByShard)
@@ -321,8 +348,8 @@ func (prom *ProposalRelayOutsideModule) processBatchResponses(responses []*messa
 			// TODO: 親にレスポンスを返す。ルートの場合はトランザクションを発行
 			destShardID := prom.pbftNode.CurChain.Get_PartitionMap(currentCallNode.Sender)
 			res.ProcessedMap[currentCallNode.TypeTraceAddress] = true
-			res.VisitedShards[destShardID] = true
-			res.VisitedShards[prom.pbftNode.ShardID] = true
+			res.VisitedContracts[currentCallNode.Sender] = true
+
 			if currentCallNode.CallType == "root" {
 				// ルートの場合、トランザクションを発行
 				if destShardID != prom.pbftNode.ShardID {
@@ -341,7 +368,7 @@ func (prom *ProposalRelayOutsideModule) processBatchResponses(responses []*messa
 						TypeTraceAddress:   currentCallNode.TypeTraceAddress,
 						Tx:                 res.Tx,
 						ProcessedMap:       res.ProcessedMap,
-						VisitedShards:      res.VisitedShards,
+						VisitedContracts:   res.VisitedContracts,
 					}
 					responseByShard[destShardID] = append(responseByShard[destShardID], response)
 				} else {
@@ -369,11 +396,34 @@ func (prom *ProposalRelayOutsideModule) processBatchResponses(responses []*messa
 						}
 					}
 
+					visitedShards := prom.Contract2Shard(res.VisitedContracts)
+					OriginalSenderShardID := prom.pbftNode.CurChain.Get_PartitionMap(res.OriginalSender)
+					OriginalRecipientShardID := prom.pbftNode.CurChain.Get_PartitionMap(res.Tx.Recipient)
+					visitedShards[OriginalSenderShardID] = true
+					visitedShards[OriginalRecipientShardID] = true
+
 					// VisitedShardsを処理してトランザクションを作成・挿入
-					for visitedShardID := range res.VisitedShards {
-						tx := core.NewTransaction(res.OriginalSender, "0000000000000000000000000000000000000001", res.Tx.Value, 0, time.Now())
+					isIncluedeInternal := false
+					for visitedShardID := range visitedShards {
+						OriginalRecipient := res.Tx.Recipient
+						tx := core.NewTransaction(res.OriginalSender, OriginalRecipient, res.Tx.Value, 0, res.Tx.Time)
 						tx.HasContract = true
-						tx.IsCrossShardFuncCall = true
+						tx.RequestID = res.RequestID
+						tx.DivisionCount = len(visitedShards)
+
+						if len(visitedShards) == 1 {
+							prom.pbftNode.pl.Plog.Println("CrossShardFunctionCallがCLPAでInner TXになりました。")
+							prom.cfcpm.SClock.UnlockAllByRequestID(tx.RequestID)
+							tx.InternalTxs = res.Tx.InternalTxs
+							tx.IsAllInner = true
+							isIncluedeInternal = true
+						} else {
+							if visitedShardID == OriginalRecipientShardID {
+								tx.InternalTxs = res.Tx.InternalTxs
+								isIncluedeInternal = true
+							}
+							tx.IsCrossShardFuncCall = true
+						}
 
 						// シャードに関連付けられたコントラクトアドレスを追加
 						for contractAddr := range contractAddrByShard[visitedShardID] {
@@ -382,6 +432,10 @@ func (prom *ProposalRelayOutsideModule) processBatchResponses(responses []*messa
 
 						// トランザクションを対応するシャードに追加
 						injectTxByShard[visitedShardID] = append(injectTxByShard[visitedShardID], tx)
+					}
+
+					if !isIncluedeInternal {
+						fmt.Println("InternalTxが含まれていません。")
 					}
 				}
 			} else {
@@ -401,7 +455,7 @@ func (prom *ProposalRelayOutsideModule) processBatchResponses(responses []*messa
 					TypeTraceAddress:   currentCallNode.TypeTraceAddress, // 親のTypeTraceAddressをそのままコピー
 					Tx:                 res.Tx,
 					ProcessedMap:       res.ProcessedMap,
-					VisitedShards:      res.VisitedShards,
+					VisitedContracts:   res.VisitedContracts,
 				}
 				responseByShard[destShardID] = append(responseByShard[destShardID], response)
 			}
@@ -424,7 +478,7 @@ func (prom *ProposalRelayOutsideModule) processBatchResponses(responses []*messa
 				TypeTraceAddress:   differentShardNode.TypeTraceAddress,
 				Tx:                 res.Tx,
 				ProcessedMap:       res.ProcessedMap,
-				VisitedShards:      res.VisitedShards,
+				VisitedContracts:   res.VisitedContracts,
 			}
 
 			requestsByShard[destShardID] = append(requestsByShard[destShardID], request)
@@ -493,22 +547,66 @@ func (prom *ProposalRelayOutsideModule) sendInjectTransactions(sendToShard map[u
 
 func (prom *ProposalRelayOutsideModule) StartBatchProcessing(batchSize int, interval time.Duration) {
 	prom.pbftNode.pl.Plog.Println("StartBatchProcessing: 開始!!!")
+
+	// メインのバッチ処理用タイマー
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		// リクエストのバッチ処理
-		requestBatch := prom.cfcpm.GetAndClearRequests(batchSize)
-		if len(requestBatch) > 0 {
-			prom.processBatchRequests(requestBatch)
-		}
+	// CSVエクスポート用のタイマー (5秒間隔)
+	exportTicker := time.NewTicker(5 * time.Second)
+	defer exportTicker.Stop()
 
-		// レスポンスのバッチ処理
-		responseBatch := prom.cfcpm.GetAndClearResponses(batchSize)
-		if len(responseBatch) > 0 {
-			prom.processBatchResponses(responseBatch)
+	// パーティション状態ログ出力用タイマー (1秒間隔)
+	partitionLogTicker := time.NewTicker(1 * time.Second)
+	defer partitionLogTicker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			// パーティションを変更するときは待機
+			if prom.cdm.PartitionOn {
+				continue
+			}
+
+			// リクエストのバッチ処理
+			requestBatch := prom.cfcpm.GetAndClearRequests(batchSize)
+			if len(requestBatch) > 0 {
+				start := time.Now() // 計測開始
+				prom.processBatchRequests(requestBatch)
+				elapsed := time.Since(start) // 経過時間を計測
+				fmt.Printf("processBatchRequests: %v items processed in %v\n", len(requestBatch), elapsed)
+			}
+
+			// レスポンスのバッチ処理
+			responseBatch := prom.cfcpm.GetAndClearResponses(batchSize)
+			if len(responseBatch) > 0 {
+				start := time.Now() // 計測開始
+				prom.processBatchResponses(responseBatch)
+				elapsed := time.Since(start) // 経過時間を計測
+				fmt.Printf("processBatchResponses: %v items processed in %v\n", len(responseBatch), elapsed)
+			}
+
+		case <-exportTicker.C:
+			// CSVファイルのエクスポート
+			filePath := "expTest/contractPoolSize/S" + strconv.Itoa(int(prom.pbftNode.ShardID)) + ".csv"
+			prom.cfcpm.ExportPoolSizesToCSV(filePath)
+
+		case <-partitionLogTicker.C:
+			// パーティション状態のログ出力
+			if prom.cdm.PartitionOn {
+				prom.pbftNode.pl.Plog.Println("パーティションを変更中なので、コントラクトバッチ処理を待機します。")
+			}
 		}
 	}
+}
+
+func (prom *ProposalRelayOutsideModule) Contract2Shard(contracts map[string]bool) map[uint64]bool {
+	visitedShards := make(map[uint64]bool)
+	for contract := range contracts {
+		shardID := prom.pbftNode.CurChain.Get_PartitionMap(contract)
+		visitedShards[shardID] = true
+	}
+	return visitedShards
 }
 
 // 戻り値は、異なるシャードが見つかった場合の子を返す

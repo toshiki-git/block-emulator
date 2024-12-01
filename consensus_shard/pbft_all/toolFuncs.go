@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strconv"
 	"time"
@@ -203,4 +204,10 @@ func ReverseMap[K comparable, V comparable](m map[K]V) map[V][]K {
 	}
 
 	return reversedMap
+}
+
+// GenerateRandomString generates a random number as a string between 0 and max (inclusive).
+func GenerateRandomString(max int) string {
+	randomNumber := rand.Intn(max + 1) // Generate a random number between 0 and max (inclusive)
+	return strconv.Itoa(randomNumber)  // Convert the number to a string
 }
