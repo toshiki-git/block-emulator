@@ -10,6 +10,7 @@ import (
 	"blockEmulator/networks"
 	"blockEmulator/partition"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 )
@@ -62,50 +63,62 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 	accountToFetch := make([]string, 0)        // mergedVertexは含めないようにする
 	lastMapid := len(cphm.cdm.ModifiedMap) - 1 // 最初は0
 	cphm.pbftNode.pl.Plog.Println("sendAccounts_and_Txs(): lastMapidは", lastMapid)
-	for key, val := range cphm.cdm.ModifiedMap[lastMapid] { //key is the address, val is the shardID
+	for addr, newShardID := range cphm.cdm.ModifiedMap[lastMapid] { // key is the address, val is the shardID
 		// ModifiedMapがすべてのアカウントを含んでないので、そこでエラーになる可能性がある
-		if addrs, ok := cphm.cdm.ReversedMergedContracts[lastMapid][partition.Vertex{Addr: key}]; ok {
+		if originalAddrs, ok := cphm.cdm.ReversedMergedContracts[lastMapid][partition.Vertex{Addr: addr}]; ok {
 			// mergedVertexはaccountToFetchに含めない
-			for _, addr := range addrs {
-				if cphm.pbftNode.CurChain.Get_PartitionMap(addr) != val {
-					accountToFetch = append(accountToFetch, addr)
+			// mergedVertexのshardID(newShardID)と、originalAddrのshardIDが違う場合は移動
+			// newShardID != cphm.pbftNode.ShardIDがないのは、originalAddrのshardIDが初期値がバラバラだから
+			for _, originalAddr := range originalAddrs {
+				currentShard := cphm.pbftNode.CurChain.Get_PartitionMap(originalAddr) // originalAddrの現在のシャード
+				isDifferentShard := currentShard != newShardID                        // 移動先のシャードが異なるか
+				isNewShardNotLocal := newShardID != cphm.pbftNode.ShardID             // 移動先が自分自身じゃない
+				isCurrentShardLocal := currentShard == cphm.pbftNode.ShardID          // 対象アドレスが自分のシャードに所属している
+
+				if isDifferentShard && isNewShardNotLocal && isCurrentShardLocal {
+					accountToFetch = append(accountToFetch, originalAddr)
 				}
 			}
 			continue
 		}
 
 		// ModifiedMapのアカウントが現在のシャードになくて、かつ自分のシャードに所属していることを確認
-		if val != cphm.pbftNode.ShardID && cphm.pbftNode.CurChain.Get_PartitionMap(key) == cphm.pbftNode.ShardID { // cphm.pbftNode.CurChain.Get_PartitionMapはまだ更新されてない
-			// TODO: MergedContractの最初のデプロイ先のシャードが重要になるそこでエラーになる可能性があるそこをなおす
-			accountToFetch = append(accountToFetch, key) // 移動するアカウントだけを抽出
+		// 基本的に相手に送るアカウントを考えている、自分のshardに来るものはほかのshardから送られてくる
+		// 移動先が自分自身じゃない && 対象アドレスが自分のシャードに所属している
+		if newShardID != cphm.pbftNode.ShardID && cphm.pbftNode.CurChain.Get_PartitionMap(addr) == cphm.pbftNode.ShardID { // cphm.pbftNode.CurChain.Get_PartitionMapはまだ更新されてない
+			accountToFetch = append(accountToFetch, addr) // 移動するアカウントだけを抽出
 		}
 	}
+
 	asFetched := cphm.pbftNode.CurChain.FetchAccounts(accountToFetch)
 
 	// send the accounts to other shards
 	cphm.pbftNode.CurChain.Txpool.GetLocked()
 	cphm.pbftNode.pl.Plog.Println("sendAccounts_and_Txs(): The size of tx pool is: ", len(cphm.pbftNode.CurChain.Txpool.TxQueue))
-	for i := uint64(0); i < cphm.pbftNode.pbftChainConfig.ShardNums; i++ {
-		if i == cphm.pbftNode.ShardID {
+	for destShardID := uint64(0); destShardID < cphm.pbftNode.pbftChainConfig.ShardNums; destShardID++ {
+		if destShardID == cphm.pbftNode.ShardID {
 			continue
 		}
+
 		addrSend := make([]string, 0)
 		addrSet := make(map[string]bool)
 		asSend := make([]*core.AccountState, 0)
-		for idx, addr := range accountToFetch {
+
+		for idx, originalAddr := range accountToFetch {
 			// if the account is in the shard i, then send it
 			//　shard iに移動するべきアカウントをピックアップ
-			if mergedVertex, ok := cphm.cdm.MergedContracts[lastMapid][addr]; ok {
-				if cphm.cdm.ModifiedMap[lastMapid][mergedVertex.Addr] == i {
-					addrSend = append(addrSend, addr)
-					addrSet[addr] = true
+			// mergedされたaddrの場合
+			if mergedVertex, ok := cphm.cdm.MergedContracts[lastMapid][originalAddr]; ok {
+				if cphm.cdm.ModifiedMap[lastMapid][mergedVertex.Addr] == destShardID { // ModifiedMapはmergedVertexのものしか参照できない
+					addrSend = append(addrSend, originalAddr)
+					addrSet[originalAddr] = true
 					asSend = append(asSend, asFetched[idx])
 				}
 				continue
 			}
-			if cphm.cdm.ModifiedMap[lastMapid][addr] == i {
-				addrSend = append(addrSend, addr)
-				addrSet[addr] = true
+			if cphm.cdm.ModifiedMap[lastMapid][originalAddr] == destShardID {
+				addrSend = append(addrSend, originalAddr)
+				addrSet[originalAddr] = true
 				asSend = append(asSend, asFetched[idx])
 			}
 		}
@@ -136,31 +149,89 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 
 			// Internal TXのとき
 			if ptx.HasContract {
+				remainingAccount := make(map[string]*core.Account) // 残るAccountを保持
+				sendAccount := make(map[string]*core.Account)      // 送信するAccountを保持
+				isTxSend := false                                  // txSendに移動したかを追跡
+
 				if ptx.IsCrossShardFuncCall {
-					_, ok := addrSet[ptx.Recipient]
-					if ok {
-						txSend = append(txSend, ptx)
+					if len(ptx.StateChangeAccounts) > 0 {
+						for _, account := range ptx.StateChangeAccounts {
+							_, ok := addrSet[account.AcAddress]
+							if ok {
+								sendAccount[account.AcAddress] = account
+								isTxSend = true
+							} else {
+								// 残るscAddrを保持
+								remainingAccount[account.AcAddress] = account
+							}
+
+						}
+
+						ptx.StateChangeAccounts = remainingAccount
+
+						if len(remainingAccount) > 0 {
+							cphm.pbftNode.CurChain.Txpool.TxQueue[firstPtr] = ptx
+							firstPtr++
+						} else {
+							ptx.IsDeleted = true
+						}
+
+						if isTxSend {
+							ptx.StateChangeAccounts = sendAccount
+							txSend = append(txSend, ptx)
+						}
 					} else {
-						cphm.pbftNode.CurChain.Txpool.TxQueue[firstPtr] = ptx
-						firstPtr++
+						ptx.PrintTx()
+						fmt.Println("[ERROR] 更新するstateがありません", ptx.Sender, ptx.Recipient)
 					}
 				}
 
+				// ここが問題 PratitionによってAllInnerではなくなる可能性がある
 				if ptx.IsAllInner {
-					_, ok := addrSet[ptx.Recipient]
-					if ok {
-						txSend = append(txSend, ptx)
+					if len(ptx.StateChangeAccounts) > 0 {
+						for _, account := range ptx.StateChangeAccounts {
+							_, ok := addrSet[account.AcAddress]
+							if ok {
+								sendAccount[account.AcAddress] = account
+								isTxSend = true
+							} else {
+								// 残るscAddrを保持
+								remainingAccount[account.AcAddress] = account
+							}
+
+						}
+
+						// 全部移動はしない場合
+						if len(ptx.StateChangeAccounts) != len(sendAccount) {
+							ptx.IsAllInner = false
+							ptx.IsCrossShardFuncCall = true
+							ptx.DivisionCount++
+							fmt.Println("AllIneerがCrossShardFuncCallに変更されました")
+						}
+
+						ptx.StateChangeAccounts = remainingAccount
+
+						if len(remainingAccount) > 0 {
+							cphm.pbftNode.CurChain.Txpool.TxQueue[firstPtr] = ptx
+							firstPtr++
+						} else {
+							ptx.IsDeleted = true
+						}
+
+						if isTxSend {
+							ptx.StateChangeAccounts = sendAccount
+							txSend = append(txSend, ptx)
+						}
 					} else {
-						cphm.pbftNode.CurChain.Txpool.TxQueue[firstPtr] = ptx
-						firstPtr++
+						ptx.PrintTx()
+						fmt.Println("[ERROR] 更新するstateがありません", ptx.Sender, ptx.Recipient)
 					}
 				}
-
 			}
 		}
 
 		cphm.pbftNode.CurChain.Txpool.TxQueue = cphm.pbftNode.CurChain.Txpool.TxQueue[:firstPtr]
-		cphm.pbftNode.pl.Plog.Printf("sendAccounts_and_Txs(): シャード %d に %d 個のトランザクションを送信\n", i, len(txSend))
+		cphm.pbftNode.pl.Plog.Printf("sendAccounts_and_Txs(): シャード %d に %d 個のトランザクションを送信\n", destShardID, len(txSend))
 
 		// ここにShard iに移動するContract Request Poolを送信する処理を追加する
 		requestSend := make([]*message.CrossShardFunctionRequest, 0)
@@ -177,7 +248,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 			}
 		}
 		cphm.cfcpm.RequestPool = cphm.cfcpm.RequestPool[:firstPtr]
-		cphm.pbftNode.pl.Plog.Printf("sendAccounts_and_Txs(): シャード %d に %d 個のCrossShardFuctionCallRequestを送信\n", i, len(requestSend))
+		cphm.pbftNode.pl.Plog.Printf("sendAccounts_and_Txs(): シャード %d に %d 個のCrossShardFuctionCallRequestを送信\n", destShardID, len(requestSend))
 
 		// ここにShard iに移動するContract Request Poolを送信する処理を追加する
 		responseSend := make([]*message.CrossShardFunctionResponse, 0)
@@ -194,9 +265,9 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 			}
 		}
 		cphm.cfcpm.ResponsePool = cphm.cfcpm.ResponsePool[:firstPtr]
-		cphm.pbftNode.pl.Plog.Printf("sendAccounts_and_Txs(): シャード %d に %d 個のCrossShardFuctionCallResponseを送信\n", i, len(responseSend))
+		cphm.pbftNode.pl.Plog.Printf("sendAccounts_and_Txs(): シャード %d に %d 個のCrossShardFuctionCallResponseを送信\n", destShardID, len(responseSend))
 
-		cphm.pbftNode.pl.Plog.Printf("The txSend to shard %d is generated \n", i)
+		cphm.pbftNode.pl.Plog.Printf("The txSend to shard %d is generated \n", destShardID)
 		ast := message.AccountStateAndTx{
 			Addrs:        addrSend,
 			AccountState: asSend,
@@ -210,8 +281,8 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 			log.Panic()
 		}
 		send_msg := message.MergeMessage(message.AccountState_and_TX, aByte)
-		networks.TcpDial(send_msg, cphm.pbftNode.ip_nodeTable[i][0])
-		cphm.pbftNode.pl.Plog.Printf("The message to shard %d is sent\n", i)
+		networks.TcpDial(send_msg, cphm.pbftNode.ip_nodeTable[destShardID][0])
+		cphm.pbftNode.pl.Plog.Printf("The message to shard %d is sent\n", destShardID)
 	}
 	cphm.pbftNode.pl.Plog.Println("sendAccounts_and_Txs():after sending, The size of tx pool is: ", len(cphm.pbftNode.CurChain.Txpool.TxQueue))
 	cphm.pbftNode.CurChain.Txpool.GetUnlocked()
@@ -244,69 +315,116 @@ func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message
 	// propose, send all txs to other nodes in shard
 	cphm.pbftNode.pl.Plog.Println("The number of ReceivedNewTx: ", len(cphm.cdm.ReceivedNewTx))
 
-	for _, tx := range cphm.cdm.ReceivedNewTx {
+	filteredTxs := []*core.Transaction{}
+	txHashMap := make(map[string]*core.Transaction)
+	for _, rtx := range cphm.cdm.ReceivedNewTx {
 		//TODO: ここで発生しているエラーを解消する
-
 		// Internal TXじゃないとき
-		if !tx.HasContract {
-			/* var sender string
-			if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.Sender]; ok {
+		if !rtx.HasContract {
+			sender := rtx.Sender
+			recipient := rtx.Recipient
+			if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][rtx.Sender]; ok {
 				sender = mergedVertex.Addr
-			} else {
-				sender = tx.Sender
+			}
+			if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][rtx.Recipient]; ok {
+				recipient = mergedVertex.Addr
 			}
 
-			var recepient string
-			if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.Recipient]; ok {
-				recepient = mergedVertex.Addr
-			} else {
-				recepient = tx.Recipient
+			if !rtx.Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][sender] != cphm.pbftNode.ShardID {
+				fmt.Printf("[ERROR] Sender: %s, Recipient: %s modifiedMapShardID: %d, currentShardID: %d\n", rtx.Sender, rtx.Recipient, cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][rtx.Sender], cphm.pbftNode.ShardID)
+				// log.Panic("error tx: sender is not in the shard")
 			}
-
-			if !tx.Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][sender] != cphm.pbftNode.ShardID {
-				log.Panic("error tx: sender is not in the shard")
+			if rtx.Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][recipient] != cphm.pbftNode.ShardID {
+				fmt.Printf("[ERROR] Sender: %s, Recipient: %s, modifiedMapShardID: %d, currentShardID: %d\n", rtx.Sender, rtx.Recipient, cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][rtx.Recipient], cphm.pbftNode.ShardID)
+				// log.Panic("error tx: recipient is not in the shard")
 			}
-			if tx.Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][recepient] != cphm.pbftNode.ShardID {
-				log.Panic("error tx: recipient is not in the shard")
-			} */
 		}
 
-		if tx.HasContract {
+		if rtx.HasContract {
 			// これはエラーハンドリング
-			/* InternalTxIdx := tx.LastItxProcessedIdx
-			var iSender string
-			if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.InternalTxs[InternalTxIdx].Sender]; ok {
-				iSender = mergedVertex.Addr
-			} else {
-				iSender = tx.InternalTxs[InternalTxIdx].Sender
-			}
+			for addr, account := range rtx.StateChangeAccounts {
+				if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][addr]; ok {
+					addr = mergedVertex.Addr
+				}
 
-			var iRecepient string
-			if mergedVertex, ok := cphm.cdm.MergedContracts[cphm.cdm.AccountTransferRound][tx.InternalTxs[InternalTxIdx].Recipient]; ok {
-				iRecepient = mergedVertex.Addr
-			} else {
-				iRecepient = tx.InternalTxs[InternalTxIdx].Recipient
-			}
+				shardID := cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][addr]
 
-			if !tx.InternalTxs[InternalTxIdx].Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][iSender] != cphm.pbftNode.ShardID {
-				cphm.pbftNode.pl.Plog.Printf(
-					"[ERROR] Internal Transaction relay status mismatch: expected ShardID=%d, got sisid=%d, risid=%d. Sender=%s, Recipient=%s, Relayed=%t",
-					cphm.pbftNode.ShardID, cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][iSender], cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][iRecepient], iSender, iRecepient, tx.InternalTxs[InternalTxIdx].Relayed,
-				)
-				cphm.pbftNode.pl.Plog.Println(tx.InternalTxs[InternalTxIdx].ParentTxHash)
-				log.Panic("error itx: sender is not in the shard")
+				if shardID != cphm.pbftNode.ShardID {
+					rtx.PrintTx()
+					fmt.Printf("[ERROR] Addr: %s, modifiedMapShardID: %d, currentShardID: %d, IsContract: %t\n", addr, shardID, cphm.pbftNode.ShardID, account.IsContract)
+					log.Panic("error tx: StateChangeAccount is not in the shard ", addr, shardID, cphm.pbftNode.ShardID, account.IsContract)
+				}
+
 			}
-			if tx.InternalTxs[InternalTxIdx].Relayed && cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][iRecepient] != cphm.pbftNode.ShardID {
-				cphm.pbftNode.pl.Plog.Printf(
-					"[ERROR] Internal Transaction relay shard ID mismatch: expected ShardID=%d, got sisid=%d, risid=%d. Sender=%s, Recipient=%s, Relayed=%t",
-					cphm.pbftNode.ShardID, cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][iSender], cphm.cdm.ModifiedMap[cphm.cdm.AccountTransferRound][iRecepient], iSender, iRecepient, tx.InternalTxs[InternalTxIdx].Relayed,
-				)
-				cphm.pbftNode.pl.Plog.Println(tx.InternalTxs[InternalTxIdx].ParentTxHash)
-				log.Panic("error itx: recipient is not in the shard")
-			} */
 		}
 
+		if existingTx, exists := txHashMap[string(rtx.TxHash)]; exists {
+			for addr, account := range rtx.StateChangeAccounts {
+				existingTx.StateChangeAccounts[addr] = account
+			}
+			existingTx.MergeCount++
+
+			if rtx.InternalTxs != nil {
+				fmt.Println("InternalTxsを受け渡しました")
+				existingTx.InternalTxs = rtx.InternalTxs
+				existingTx.IsExecuteCLPA = true
+			}
+
+			if rtx.DivisionCount == existingTx.MergeCount+1 {
+				fmt.Println("AllInnerに変更されました!!!!!!!!")
+				existingTx.IsAllInner = true
+				existingTx.IsCrossShardFuncCall = false
+			}
+		} else {
+			// 新しいTxHashの場合、マップに記録して結果リストに追加
+			txHashMap[string(rtx.TxHash)] = rtx
+			filteredTxs = append(filteredTxs, rtx)
+		}
 	}
+
+	// 重複を除いた配列を反映
+	cphm.cdm.ReceivedNewTx = filteredTxs
+
+	txHashToIdxMap := make(map[string]int) // key: RequestID, value: TxQueueのindex
+
+	// TxQueueからRequestIDをキーにマッピングを作成
+	for idx, tx := range cphm.pbftNode.CurChain.Txpool.TxQueue {
+		txHashToIdxMap[string(tx.TxHash)] = idx
+	}
+
+	// ReceivedNewTxをフィルタリングしつつ処理
+	filteredNewTx := make([]*core.Transaction, 0) // 残るrtxを保持するための新しいスライス
+
+	for _, rtx := range cphm.cdm.ReceivedNewTx {
+		if poolIdx, ok := txHashToIdxMap[string(rtx.TxHash)]; ok {
+			// 新しく受け取ったStateを更新するaccountを反映させる
+			for addr, account := range rtx.StateChangeAccounts {
+				cphm.pbftNode.CurChain.Txpool.TxQueue[poolIdx].StateChangeAccounts[addr] = account
+			}
+
+			if rtx.IsDeleted {
+				if rtx.IsCrossShardFuncCall && cphm.pbftNode.CurChain.Txpool.TxQueue[poolIdx].DivisionCount == rtx.MergeCount+1 {
+					fmt.Println("AllInnerになったー")
+					cphm.pbftNode.CurChain.Txpool.TxQueue[poolIdx].IsCrossShardFuncCall = false
+					cphm.pbftNode.CurChain.Txpool.TxQueue[poolIdx].IsAllInner = true
+				}
+				if rtx.InternalTxs != nil {
+					fmt.Println("InternalTxsを受け渡しました")
+					cphm.pbftNode.CurChain.Txpool.TxQueue[poolIdx].InternalTxs = rtx.InternalTxs
+					cphm.pbftNode.CurChain.Txpool.TxQueue[poolIdx].IsExecuteCLPA = true
+				}
+			}
+		} else {
+			// rtxを残す
+			filteredNewTx = append(filteredNewTx, rtx)
+		}
+	}
+
+	// ReceivedNewTxを更新（削除済みのrtxを反映）
+	cphm.cdm.ReceivedNewTx = filteredNewTx
+
+	cphm.pbftNode.pl.Plog.Println("ReceivedNewTxはこれだけになりました: ", len(cphm.cdm.ReceivedNewTx))
+
 	cphm.pbftNode.CurChain.Txpool.AddTxs2Pool(cphm.cdm.ReceivedNewTx)
 	cphm.pbftNode.pl.Plog.Println("proposePartition(): The size of txpool: ", len(cphm.pbftNode.CurChain.Txpool.TxQueue))
 

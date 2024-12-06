@@ -31,6 +31,7 @@ const (
 	CContractInject  MessageType = "contractInject"
 	CContractRequest MessageType = "contractRequest"
 	CContactResponse MessageType = "contractResponse"
+	CContractGraph   MessageType = "contractGraph"
 )
 
 var (
@@ -121,6 +122,11 @@ type BlockInfoMsg struct {
 
 	// for CLPA
 	CLPAResult *partition.CLPAState
+}
+
+type ContractGraph struct {
+	Txs       []*core.Transaction
+	ToShardID uint64
 }
 
 type SeqIDinfo struct {

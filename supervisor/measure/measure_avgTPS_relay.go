@@ -2,6 +2,7 @@ package measure
 
 import (
 	"blockEmulator/message"
+	"blockEmulator/params"
 	"strconv"
 	"time"
 )
@@ -79,9 +80,7 @@ func (tat *TestModule_avgTPS_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg)
 	// modify the local epoch data
 	tat.excutedTxNum[epochid] += float64(r1TxNum+r2TxNum) / 2
 	tat.excutedTxNum[epochid] += float64(len(b.InnerShardTxs))
-	for _, tx := range b.CrossShardFunctionCall {
-		tat.excutedTxNum[epochid] += 1 / float64(tx.DivisionCount)
-	}
+	tat.excutedTxNum[epochid] += float64(len(b.CrossShardFunctionCall)) // TODO: どう扱うかは検討
 	tat.excutedTxNum[epochid] += float64(len(b.InnerSCTxs))
 
 	tat.normalTxNum[epochid] += len(b.InnerShardTxs)
@@ -127,7 +126,9 @@ func (tat *TestModule_avgTPS_Relay) OutputRecord() (perEpochTPS []float64, total
 			lTime = tat.endTime[eid]
 		}
 	}
-	totalTPS = totalTxNum / (lTime.Sub(eTime).Seconds() + totalExecutionTime.Seconds())
+
+	totalTPS = float64(params.TotalDataSize) / (lTime.Sub(eTime).Seconds() + totalExecutionTime.Seconds())
+
 	return
 }
 

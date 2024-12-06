@@ -10,31 +10,35 @@ import (
 
 // CallNode はスマートコントラクトの呼び出しノードを表します
 type CallNode struct {
-	TypeTraceAddress string // ex: "0" "0_1", "0_1_0" ...
-	CallType         string // ex: "call", "staticcall", "delegatecall", "create"
-	Sender           string
-	SenderShardID    int
-	Recipient        string
-	RecipientShardID int
-	Value            *big.Int
-	Children         []*CallNode
-	Parent           *CallNode `json:"-"`
-	IsLeaf           bool      // 葉ノードかどうかを示すフラグ
-	IsProcessed      bool      // 処理済みかどうかを示すフラグ
+	TypeTraceAddress    string // ex: "0" "0_1", "0_1_0" ...
+	CallType            string // ex: "call", "staticcall", "delegatecall", "create"
+	Sender              string
+	SenderIsContract    bool
+	SenderShardID       int
+	Recipient           string
+	RecipientIsContract bool
+	RecipientShardID    int
+	Value               *big.Int
+	Children            []*CallNode
+	Parent              *CallNode `json:"-"`
+	IsLeaf              bool      // 葉ノードかどうかを示すフラグ
+	IsProcessed         bool      // 処理済みかどうかを示すフラグ
 }
 
 // BuildExecutionCallTree は与えられたトレースリストから呼び出しツリーを構築し、root ノードを返します
 func BuildExecutionCallTree(tx *Transaction, processedMap map[string]bool) *CallNode {
 	root := &CallNode{
-		TypeTraceAddress: "root",
-		CallType:         "root",
-		Sender:           tx.Sender,
-		SenderShardID:    Addr2Shard(tx.Sender),
-		Recipient:        tx.Recipient,
-		RecipientShardID: Addr2Shard(tx.Recipient),
-		Value:            tx.Value,
-		IsLeaf:           false,
-		IsProcessed:      processedMap["root"], // root の処理状況を設定
+		TypeTraceAddress:    "root",
+		CallType:            "root",
+		Sender:              tx.Sender,
+		SenderShardID:       Addr2Shard(tx.Sender),
+		SenderIsContract:    false,
+		Recipient:           tx.Recipient,
+		RecipientIsContract: true,
+		RecipientShardID:    Addr2Shard(tx.Recipient),
+		Value:               tx.Value,
+		IsLeaf:              false,
+		IsProcessed:         processedMap["root"], // root の処理状況を設定
 	}
 	nodeMap := make(map[string]*CallNode)
 	nodeMap["root"] = root
@@ -62,16 +66,18 @@ func BuildExecutionCallTree(tx *Transaction, processedMap map[string]bool) *Call
 			}
 
 			newNode := &CallNode{
-				TypeTraceAddress: currentPath,
-				CallType:         parts[0],
-				Sender:           itx.Sender,
-				SenderShardID:    Addr2Shard(itx.Sender),
-				Recipient:        itx.Recipient,
-				RecipientShardID: Addr2Shard(itx.Recipient),
-				Value:            itx.Value,
-				Parent:           current,
-				IsLeaf:           true,                      // 新しいノードは葉ノードとして作成
-				IsProcessed:      processedMap[currentPath], // processedAddresses に一致する場合 true に設定
+				TypeTraceAddress:    currentPath,
+				CallType:            itx.CallType,
+				Sender:              itx.Sender,
+				SenderIsContract:    itx.SenderIsContract,
+				SenderShardID:       Addr2Shard(itx.Sender),
+				Recipient:           itx.Recipient,
+				RecipientIsContract: itx.RecipientIsContract,
+				RecipientShardID:    Addr2Shard(itx.Recipient),
+				Value:               itx.Value,
+				Parent:              current,
+				IsLeaf:              true,                      // 新しいノードは葉ノードとして作成
+				IsProcessed:         processedMap[currentPath], // processedAddresses に一致する場合 true に設定
 			}
 			// 親ノードは葉ノードでなくなる
 			current.IsLeaf = false

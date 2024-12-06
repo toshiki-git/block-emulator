@@ -45,7 +45,7 @@ type CLPACommitteeModule struct {
 
 func NewCLPACommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *signal.StopSignal, sl *supervisor_log.SupervisorLog, csvFilePath string, dataNum, batchNum, clpaFrequency int) *CLPACommitteeModule {
 	cg := new(partition.CLPAState)
-	cg.Init_CLPAState(0.5, 100, params.ShardNum)
+	cg.Init_CLPAState(0.5, params.CLPAIterationNum, params.ShardNum)
 	return &CLPACommitteeModule{
 		csvPath:             csvFilePath,
 		dataTotalNum:        dataNum,
@@ -210,7 +210,7 @@ func (ccm *CLPACommitteeModule) clpaMapSend(m map[string]uint64) {
 func (ccm *CLPACommitteeModule) clpaReset() {
 	ccm.ClpaGraphHistory = append(ccm.ClpaGraphHistory, ccm.clpaGraph)
 	ccm.clpaGraph = new(partition.CLPAState)
-	ccm.clpaGraph.Init_CLPAState(0.5, 100, params.ShardNum)
+	ccm.clpaGraph.Init_CLPAState(0.5, params.CLPAIterationNum, params.ShardNum)
 	for key, val := range ccm.modifiedMap {
 		ccm.clpaGraph.PartitionMap[partition.Vertex{Addr: key}] = int(val)
 	}
@@ -225,6 +225,11 @@ func (ccm *CLPACommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 		ccm.sl.Slog.Println("this curEpoch is updated", b.Epoch)
 		IsChangeEpoch = true
 	}
+
+	if IsChangeEpoch {
+		ccm.updateCLPAResult(b)
+	}
+
 	if b.BlockBodyLength == 0 {
 		return
 	}
@@ -239,10 +244,6 @@ func (ccm *CLPACommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 
 	duration := time.Since(start)
 	ccm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)
-
-	if IsChangeEpoch {
-		ccm.updateCLPAResult(b)
-	}
 }
 
 func (ccm *CLPACommitteeModule) updateCLPAResult(b *message.BlockInfoMsg) {
@@ -252,3 +253,5 @@ func (ccm *CLPACommitteeModule) updateCLPAResult(b *message.BlockInfoMsg) {
 	ccm.sl.Slog.Println("Epochが変わったのでResultの集計")
 	b.CLPAResult = ccm.ClpaGraphHistory[b.Epoch-1]
 }
+
+func (ccm *CLPACommitteeModule) HandleContractGraph(content []byte) {}

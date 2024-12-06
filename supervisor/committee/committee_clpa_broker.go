@@ -55,7 +55,7 @@ type CLPACommitteeMod_Broker struct {
 
 func NewCLPACommitteeMod_Broker(Ip_nodeTable map[uint64]map[uint64]string, Ss *signal.StopSignal, sl *supervisor_log.SupervisorLog, csvFilePath string, dataNum, batchNum, clpaFrequency int) *CLPACommitteeMod_Broker {
 	cg := new(partition.CLPAState)
-	cg.Init_CLPAState(0.5, 100, params.ShardNum)
+	cg.Init_CLPAState(0.5, params.CLPAIterationNum, params.ShardNum)
 
 	broker := new(broker.Broker)
 	broker.NewBroker(nil)
@@ -253,7 +253,7 @@ func (ccm *CLPACommitteeMod_Broker) clpaMapSend(m map[string]uint64) {
 func (ccm *CLPACommitteeMod_Broker) clpaReset() {
 	ccm.ClpaGraphHistory = append(ccm.ClpaGraphHistory, ccm.clpaGraph)
 	ccm.clpaGraph = new(partition.CLPAState)
-	ccm.clpaGraph.Init_CLPAState(0.5, 100, params.ShardNum)
+	ccm.clpaGraph.Init_CLPAState(0.5, params.CLPAIterationNum, params.ShardNum)
 	for key, val := range ccm.modifiedMap {
 		ccm.clpaGraph.PartitionMap[partition.Vertex{Addr: key}] = int(val)
 	}
@@ -477,3 +477,5 @@ func (ccm *CLPACommitteeMod_Broker) handleTx2ConfirmMag(mag2confirms []*message.
 	ccm.brokerModuleLock.Unlock()
 	fmt.Println("finish ctx with adding tx1 and tx2 to txpool,len", num)
 }
+
+func (ccm *CLPACommitteeMod_Broker) HandleContractGraph(content []byte) {}

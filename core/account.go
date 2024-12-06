@@ -14,8 +14,9 @@ import (
 )
 
 type Account struct {
-	AcAddress utils.Address
-	PublicKey []byte
+	AcAddress  utils.Address
+	IsContract bool
+	PublicKey  []byte
 }
 
 // AccoutState record the details of an account, it will be saved in status trie

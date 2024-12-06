@@ -18,12 +18,15 @@ type TestModule_TCL_Relay struct {
 	ctxCommitLatency                    []int64
 	normalTxCommitLatency               []int64
 
-	relay1CommitTS map[string]time.Time
+	relay1CommitTS    map[string]time.Time
+	clpaExecutionTime []time.Duration
+
+	crossShardFunctionCallLatency map[string]int64
 
 	normalTxNum                 []int
 	relay1TxNum                 []int
 	relay2TxNum                 []int
-	crossShardFunctionCallTxNum []float64
+	crossShardFunctionCallTxNum []int
 	innerSCTxNum                []int
 	txNum                       []float64 // record the txNumber in each epoch
 }
@@ -40,12 +43,15 @@ func NewTestModule_TCL_Relay() *TestModule_TCL_Relay {
 		innerSCTxCommitLatency:              make([]int64, 0),
 		ctxCommitLatency:                    make([]int64, 0),
 
-		relay1CommitTS: make(map[string]time.Time),
+		relay1CommitTS:    make(map[string]time.Time),
+		clpaExecutionTime: make([]time.Duration, 0),
+
+		crossShardFunctionCallLatency: make(map[string]int64),
 
 		normalTxNum:                 make([]int, 0),
 		relay1TxNum:                 make([]int, 0),
 		relay2TxNum:                 make([]int, 0),
-		crossShardFunctionCallTxNum: make([]float64, 0),
+		crossShardFunctionCallTxNum: make([]int, 0),
 		innerSCTxNum:                make([]int, 0),
 		txNum:                       make([]float64, 0),
 	}
@@ -57,6 +63,10 @@ func (tml *TestModule_TCL_Relay) OutputMetricName() string {
 
 // modified latency
 func (tml *TestModule_TCL_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) {
+	if b.CLPAResult != nil {
+		tml.clpaExecutionTime = append(tml.clpaExecutionTime, b.CLPAResult.ExecutionTime)
+	}
+
 	if b.BlockBodyLength == 0 { // empty block
 		return
 	}
@@ -89,17 +99,11 @@ func (tml *TestModule_TCL_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 	tml.relay1TxNum[epochid] += len(b.Relay1Txs)
 	tml.relay2TxNum[epochid] += len(b.Relay2Txs)
 
-	var currentCrossShardFunctionCallTxNum float64
-	for _, tx := range b.CrossShardFunctionCall {
-		if tx.DivisionCount > 0 {
-			tml.crossShardFunctionCallTxNum[epochid] += 1 / float64(tx.DivisionCount)
-			currentCrossShardFunctionCallTxNum += 1 / float64(tx.DivisionCount)
-		}
-	}
+	tml.crossShardFunctionCallTxNum[epochid] += len(b.CrossShardFunctionCall)
 	tml.innerSCTxNum[epochid] += len(b.InnerSCTxs)
 
 	tml.txNum[epochid] += float64(len(b.InnerShardTxs)) + float64(len(b.Relay1Txs)+len(b.Relay2Txs))/2
-	tml.txNum[epochid] += currentCrossShardFunctionCallTxNum + float64(len(b.InnerSCTxs))
+	tml.txNum[epochid] += float64(len(b.CrossShardFunctionCall)) + float64(len(b.InnerSCTxs))
 
 	// relay1 tx
 	for _, r1tx := range b.Relay1Txs {
@@ -126,15 +130,19 @@ func (tml *TestModule_TCL_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 
 	// cross shard function call tx
 	for _, cftx := range b.CrossShardFunctionCall {
-		tml.totTxLatencyEpoch[epochid] += mTime.Sub(cftx.Time).Seconds() / float64(cftx.DivisionCount)
-
+		txHashStr := string(cftx.TxHash)
 		tml.crossShardFunctionCallCommitLatency[epochid] += int64(mTime.Sub(cftx.Time).Milliseconds())
+		// Update the latest commit time
+		if existingLatency, exists := tml.crossShardFunctionCallLatency[txHashStr]; !exists {
+			tml.crossShardFunctionCallLatency[txHashStr] = mTime.Sub(cftx.Time).Milliseconds()
+		} else if existingLatency < mTime.Sub(cftx.Time).Milliseconds() {
+			tml.crossShardFunctionCallLatency[txHashStr] = mTime.Sub(cftx.Time).Milliseconds()
+		}
 	}
 
 	// inner shard contract tx
 	for _, sctx := range b.InnerSCTxs {
 		tml.totTxLatencyEpoch[epochid] += mTime.Sub(sctx.Time).Seconds()
-
 		tml.innerSCTxCommitLatency[epochid] += int64(mTime.Sub(sctx.Time).Milliseconds())
 	}
 }
@@ -169,11 +177,20 @@ func (tml *TestModule_TCL_Relay) writeToCSV() {
 		"Sum of Relay2 TCL (ms) (Duration: Relay2 Tx Propose -> Relay2 Tx Commit)",
 		"Sum of innerShardTx TCL (ms)",
 		"Sum of CTX TCL (ms) (Duration: Relay1 Tx Propose -> Relay2 Tx Commit)",
+		"CLPA execution time",
 		"Sum of All Tx TCL (sec.)",
 	}
 	measureVals := make([][]string, 0)
 
 	for eid, totTxInE := range tml.txNum {
+		var clpaExecutionTimeStr string
+
+		if eid < len(tml.clpaExecutionTime) {
+			clpaExecutionTimeStr = tml.clpaExecutionTime[eid].String()
+		} else {
+			clpaExecutionTimeStr = time.Duration(0).String()
+		}
+
 		csvLine := []string{
 			strconv.Itoa(eid),
 			strconv.FormatFloat(totTxInE, 'f', 8, 64),
@@ -184,6 +201,7 @@ func (tml *TestModule_TCL_Relay) writeToCSV() {
 			strconv.FormatInt(tml.relay2CommitLatency[eid], 10),
 			strconv.FormatInt(tml.normalTxCommitLatency[eid], 10),
 			strconv.FormatInt(tml.ctxCommitLatency[eid], 10),
+			clpaExecutionTimeStr,
 			strconv.FormatFloat(tml.totTxLatencyEpoch[eid], 'f', 8, 64),
 		}
 		measureVals = append(measureVals, csvLine)

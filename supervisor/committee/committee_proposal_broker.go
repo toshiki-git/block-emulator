@@ -61,7 +61,7 @@ type ProposalBrokerCommitteeModule struct {
 
 func NewProposalBrokerCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *signal.StopSignal, sl *supervisor_log.SupervisorLog, csvFilePath, internalTxCsvPath string, dataNum, batchNum, clpaFrequency int) *ProposalBrokerCommitteeModule {
 	cg := new(partition.CLPAState)
-	cg.Init_CLPAState(0.5, 100, params.ShardNum)
+	cg.Init_CLPAState(0.5, params.CLPAIterationNum, params.ShardNum)
 
 	broker := new(broker.Broker)
 	broker.NewBroker(nil)
@@ -312,7 +312,7 @@ func (pbcm *ProposalBrokerCommitteeModule) clpaMapSend(m map[string]uint64) {
 func (pbcm *ProposalBrokerCommitteeModule) clpaReset() {
 	pbcm.ClpaGraphHistory = append(pbcm.ClpaGraphHistory, pbcm.ClpaGraph)
 	pbcm.ClpaGraph = new(partition.CLPAState)
-	pbcm.ClpaGraph.Init_CLPAState(0.5, 100, params.ShardNum)
+	pbcm.ClpaGraph.Init_CLPAState(0.5, params.CLPAIterationNum, params.ShardNum)
 	for key, val := range pbcm.modifiedMap {
 		pbcm.ClpaGraph.PartitionMap[partition.Vertex{Addr: key}] = int(val)
 	}
@@ -589,3 +589,5 @@ func (pbcm *ProposalBrokerCommitteeModule) handleTx2ConfirmMag(mag2confirms []*m
 	pbcm.brokerModuleLock.Unlock()
 	fmt.Println("finish ctx with adding tx1 and tx2 to txpool,len", num)
 }
+
+func (pbcm *ProposalBrokerCommitteeModule) HandleContractGraph(content []byte) {}

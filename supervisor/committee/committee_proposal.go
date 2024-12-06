@@ -55,7 +55,7 @@ type ProposalCommitteeModule struct {
 func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *signal.StopSignal, sl *supervisor_log.SupervisorLog, csvFilePath, internalTxCsvPath string, dataNum, batchNum, clpaFrequency int) *ProposalCommitteeModule {
 	cg := new(partition.CLPAState)
 	// argument (WeightPenalty, MaxIterations, ShardNum)
-	cg.Init_CLPAState(0.5, 100, params.ShardNum)
+	cg.Init_CLPAState(0.5, params.CLPAIterationNum, params.ShardNum)
 
 	pcm := &ProposalCommitteeModule{
 		csvPath:             csvFilePath,
@@ -216,10 +216,10 @@ func (pcm *ProposalCommitteeModule) data2txWithContract(data []string, nonce uin
 			delete(pcm.internalTxMap, txHash)
 		}
 
-		if len(tx.InternalTxs) > 30 {
-			pcm.sl.Slog.Printf("Internal TXが多すぎます。txHash: %s, InternalTxs: %d\n", txHash, len(tx.InternalTxs))
+		if len(tx.InternalTxs) > params.SkipThresholdInternalTx {
+			// pcm.sl.Slog.Printf("Internal TXが多すぎます。txHash: %s, InternalTxs: %d\n", txHash, len(tx.InternalTxs))
 			if params.IsSkipLongInternalTx == 1 {
-				pcm.sl.Slog.Println("Internal TXをスキップします。")
+				// pcm.sl.Slog.Println("Internal TXをスキップします。")
 				return &core.Transaction{}, false
 			}
 		}
@@ -238,6 +238,7 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 	reader := csv.NewReader(txfile)
 	txlist := make([]*core.Transaction, 0) // save the txs in this epoch (round)
 	clpaCnt := 0
+	skipTxCnt := 0
 	for {
 		data, err := reader.Read()
 		if err == io.EOF {
@@ -250,6 +251,7 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 			txlist = append(txlist, tx)
 			pcm.nowDataNum++
 		} else {
+			skipTxCnt++
 			continue
 		}
 
@@ -312,6 +314,7 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 
 		if pcm.nowDataNum == pcm.dataTotalNum {
 			pcm.sl.Slog.Println("All txs have been sent!!!!!")
+			pcm.sl.Slog.Printf("Skiped txs: %d\n", skipTxCnt)
 			break
 		}
 	}
@@ -442,7 +445,7 @@ func (pcm *ProposalCommitteeModule) clpaMapSend(m map[string]uint64) {
 func (pcm *ProposalCommitteeModule) clpaReset() {
 	pcm.ClpaGraphHistory = append(pcm.ClpaGraphHistory, pcm.ClpaGraph)
 	pcm.ClpaGraph = new(partition.CLPAState)
-	pcm.ClpaGraph.Init_CLPAState(0.5, 100, params.ShardNum)
+	pcm.ClpaGraph.Init_CLPAState(0.5, params.CLPAIterationNum, params.ShardNum)
 	for key, val := range pcm.modifiedMap {
 		pcm.ClpaGraph.PartitionMap[partition.Vertex{Addr: key}] = int(val)
 	}
@@ -458,6 +461,12 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 		pcm.sl.Slog.Println("this curEpoch is updated", b.Epoch)
 		IsChangeEpoch = true
 	}
+
+	// ATTENTION: b.BlockBodyLengthより上に書く
+	if IsChangeEpoch {
+		pcm.updateCLPAResult(b)
+	}
+
 	if b.BlockBodyLength == 0 {
 		return
 	}
@@ -477,9 +486,6 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	duration := time.Since(start)
 	pcm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)
 
-	if IsChangeEpoch {
-		pcm.updateCLPAResult(b)
-	}
 }
 
 func (pcm *ProposalCommitteeModule) updateCLPAResult(b *message.BlockInfoMsg) {
@@ -491,7 +497,13 @@ func (pcm *ProposalCommitteeModule) updateCLPAResult(b *message.BlockInfoMsg) {
 }
 
 func (pcm *ProposalCommitteeModule) processTransactions(txs []*core.Transaction) {
+	skipCount := 0
 	for _, tx := range txs {
+		if tx.IsCrossShardFuncCall && !tx.IsExecuteCLPA {
+			skipCount++
+			continue
+		}
+
 		recepient := partition.Vertex{Addr: pcm.ClpaGraph.UnionFind.Find(tx.Recipient)}
 		sender := partition.Vertex{Addr: pcm.ClpaGraph.UnionFind.Find(tx.Sender)}
 
@@ -506,6 +518,7 @@ func (pcm *ProposalCommitteeModule) processTransactions(txs []*core.Transaction)
 			pcm.processInternalTx(itx)
 		}
 	}
+	pcm.sl.Slog.Printf("IsCrossShardFuncCallで %d 回スキップしました。\n", skipCount)
 }
 
 // 内部トランザクション処理
@@ -521,4 +534,18 @@ func (pcm *ProposalCommitteeModule) processInternalTx(itx *core.InternalTransact
 		// ATTENTION: MergeContractsの引数は、partition.Vertex{Addr: itx.Sender}これを使う
 		pcm.ClpaGraph.MergeContracts(partition.Vertex{Addr: itx.Sender}, partition.Vertex{Addr: itx.Recipient})
 	}
+}
+
+func (pcm *ProposalCommitteeModule) HandleContractGraph(content []byte) {
+
+	cg := new(message.ContractGraph)
+	err := json.Unmarshal(content, cg)
+	if err != nil {
+		log.Panic()
+	}
+
+	pcm.sl.Slog.Printf("ContractGraphを %d 件受信しました。", len(cg.Txs))
+	pcm.clpaLock.Lock()
+	defer pcm.clpaLock.Unlock()
+	pcm.processTransactions(cg.Txs)
 }

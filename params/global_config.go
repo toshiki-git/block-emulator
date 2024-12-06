@@ -41,7 +41,8 @@ var (
 	SupervisorAddr = "127.0.0.1:18800"        // Supervisor ip address
 	DatasetFile    = `./selectedTxs_300K.csv` // The raw BlockTransaction data path
 
-	ReconfigTimeGap = 50 // The time gap between epochs. This variable is only used in CLPA / CLPA_Broker now. (unit: second)
+	ReconfigTimeGap  = 50  // The time gap between epochs. This variable is only used in CLPA / CLPA_Broker now. (unit: second)
+	CLPAIterationNum = 100 // The number of iterations in CLPA / CLPA_Broker
 
 	// Proposal(graph)
 	InternalTxFile = `./selectedTxs_1000K.csv` // The internal transaction data path
@@ -54,6 +55,7 @@ var (
 	ContractBatchProcessingIntervalMs = 1000  // ref: StartBatchProcessing()
 	ContractBatchSize                 = 2000  // ref: StartBatchProcessing()
 	IsSkipLongInternalTx              = 0     // 1: skip long internal tx, 0: not skip long internal tx
+	SkipThresholdInternalTx           = 30    // The threshold of skipping long internal tx (unit: byte
 )
 
 // network layer
@@ -85,6 +87,7 @@ type globalConfig struct {
 	RelayWithMerkleProof int    `json:"RelayWithMerkleProof"`
 	DatasetFile          string `json:"DatasetFile"`
 	ReconfigTimeGap      int    `json:"ReconfigTimeGap"`
+	CLPAIterationNum     int    `json:"CLPAIterationNum"`
 
 	Delay       int `json:"Delay"`
 	JitterRange int `json:"JitterRange"`
@@ -100,6 +103,7 @@ type globalConfig struct {
 	ContractBatchProcessingIntervalMs int `json:"ContractBatchProcessingIntervalMs"`
 	ContractBatchSize                 int `json:"ContractBatchSize"`
 	IsSkipLongInternalTx              int `json:"IsSkipLongInternalTx"`
+	SkipThresholdInternalTx           int `json:"SkipThresholdInternalTx"`
 }
 
 func ReadConfigFile() {
@@ -144,6 +148,7 @@ func ReadConfigFile() {
 	DatasetFile = config.DatasetFile
 
 	ReconfigTimeGap = config.ReconfigTimeGap
+	CLPAIterationNum = config.CLPAIterationNum
 
 	// network params
 	Delay = config.Delay
@@ -160,4 +165,5 @@ func ReadConfigFile() {
 	ContractBatchProcessingIntervalMs = config.ContractBatchProcessingIntervalMs
 	ContractBatchSize = config.ContractBatchSize
 	IsSkipLongInternalTx = config.IsSkipLongInternalTx
+	SkipThresholdInternalTx = config.SkipThresholdInternalTx
 }

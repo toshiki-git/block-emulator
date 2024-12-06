@@ -110,30 +110,35 @@ func (bc *BlockChain) GetUpdateStatusTrie(txs []*core.Transaction) common.Hash {
 	for i, tx := range txs {
 		// for smart contract tx
 		if tx.HasContract {
-			for _, addr := range tx.SmartContractAddress {
-				// fmt.Printf("txhash: %x, sc addr: %s\n", tx.TxHash, addr)
-				state_enc, _ := st.Get([]byte(addr))
-				var state *core.AccountState
-				if state_enc == nil {
-					// fmt.Println("missing account SENDER, now adding account")
-					ib := new(big.Int)
-					ib.Add(ib, params.Init_Balance)
-					state = &core.AccountState{
-						Nonce:   uint64(i),
-						Balance: ib,
-						Storage: erc20.NewERC20Token("sampleToken", "STK"),
+			for addr, account := range tx.StateChangeAccounts {
+				// TODO: アカウントとSCを分けて処理して
+				if account.IsContract {
+					// fmt.Printf("txhash: %x, sc addr: %s\n", tx.TxHash, addr)
+					state_enc, _ := st.Get([]byte(addr))
+					var state *core.AccountState
+					if state_enc == nil {
+						// fmt.Println("missing account SENDER, now adding account")
+						ib := new(big.Int)
+						ib.Add(ib, params.Init_Balance)
+						state = &core.AccountState{
+							Nonce:   uint64(i),
+							Balance: ib,
+							Storage: erc20.NewERC20Token("sampleToken", "STK"),
+						}
+					} else {
+						state = core.DecodeAS(state_enc)
 					}
-				} else {
-					state = core.DecodeAS(state_enc)
-				}
-				// fmt.Println(addr, state, state.Storage)
-				err := state.Storage.Transfer("0", "1", new(big.Int).SetUint64(100)) // TODO: 適切なtokenの送信にする
-				if err != nil {
-					fmt.Println("[ERROR]", err)
-				}
 
-				st.Update([]byte(addr), state.Encode())
-				cnt++
+					if state.Storage == nil {
+						state.Storage = erc20.NewERC20Token("sampleToken", "STK")
+						err := state.Storage.Transfer("0", "1", new(big.Int).SetUint64(100)) // TODO: 適切なtokenの送信にする
+						if err != nil {
+							fmt.Println("[ERROR]", err)
+						}
+					}
+					st.Update([]byte(addr), state.Encode())
+					cnt++
+				}
 			}
 		}
 

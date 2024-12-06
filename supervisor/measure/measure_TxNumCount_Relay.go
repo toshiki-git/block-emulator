@@ -15,7 +15,9 @@ type TestTxNumCount_Relay struct {
 	relay2TxNum []int
 
 	crossShardFunctionCallTxNum []int
+	crossShardFunctionCallTxSum map[string]bool
 	innerSCTxNum                []int
+	innerSCTxSum                map[string]bool
 }
 
 func NewTestTxNumCount_Relay() *TestTxNumCount_Relay {
@@ -28,7 +30,9 @@ func NewTestTxNumCount_Relay() *TestTxNumCount_Relay {
 		relay2TxNum: make([]int, 0),
 
 		crossShardFunctionCallTxNum: make([]int, 0),
+		crossShardFunctionCallTxSum: make(map[string]bool),
 		innerSCTxNum:                make([]int, 0),
+		innerSCTxSum:                make(map[string]bool),
 	}
 }
 
@@ -64,9 +68,16 @@ func (ttnc *TestTxNumCount_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 	ttnc.innerSCTxNum[epochid] += len(b.InnerSCTxs)
 
 	ttnc.txNum[epochid] += float64(len(b.InnerShardTxs)) + float64(len(b.Relay1Txs)+len(b.Relay2Txs))/2
-	ttnc.txNum[epochid] += float64(len(b.InnerSCTxs))
+	// ttnc.txNum[epochid] += float64(len(b.InnerSCTxs))
+
+	for _, tx := range b.InnerSCTxs {
+		txHashStr := string(tx.TxHash)
+		ttnc.innerSCTxSum[txHashStr] = true
+	}
+
 	for _, tx := range b.CrossShardFunctionCall {
-		ttnc.txNum[epochid] += 1 / float64(tx.DivisionCount)
+		txHashStr := string(tx.TxHash)
+		ttnc.crossShardFunctionCallTxSum[txHashStr] = true
 	}
 }
 
@@ -82,6 +93,9 @@ func (ttnc *TestTxNumCount_Relay) OutputRecord() (perEpochCTXs []float64, totTxN
 		perEpochCTXs = append(perEpochCTXs, tn)
 		totTxNum += tn
 	}
+
+	totTxNum += float64(len(ttnc.crossShardFunctionCallTxSum) + len(ttnc.innerSCTxSum))
+
 	return perEpochCTXs, totTxNum
 }
 

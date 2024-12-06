@@ -92,6 +92,25 @@ func (p *PbftConsensusNode) writeCSVline(metricName []string, metricVal []string
 	writer.Flush()
 }
 
+func (p *PbftConsensusNode) IsSameShard(addrs []string) bool {
+	if len(addrs) == 0 {
+		return false
+	}
+
+	// 最初のアドレスのシャード情報を取得
+	firstShard := p.CurChain.Get_PartitionMap(addrs[0])
+
+	// 残りのアドレスが同じシャードかチェック
+	for _, addr := range addrs[1:] {
+		currentShard := p.CurChain.Get_PartitionMap(addr)
+		if currentShard != firstShard {
+			return false
+		}
+	}
+
+	return true
+}
+
 // get the digest of request
 func getDigest(r *message.Request) []byte {
 	b, err := json.Marshal(r)

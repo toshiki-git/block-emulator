@@ -37,20 +37,17 @@ type Transaction struct {
 	InternalTxs          []*InternalTransaction
 	IsCrossShardFuncCall bool
 	IsAllInner           bool
-	SmartContractAddress []utils.Address
+	IsDeleted            bool
+	IsExecuteCLPA        bool
+	StateChangeAccounts  map[utils.Address]*Account
 	RequestID            string
 	DivisionCount        int
+	MergeCount           int
 }
 
-func (tx *Transaction) PrintTx() string {
-	vals := []interface{}{
-		tx.Sender[:],
-		tx.Recipient[:],
-		tx.Value,
-		string(tx.TxHash[:]),
-	}
-	res := fmt.Sprintf("%v\n", vals)
-	return res
+func (tx *Transaction) PrintTx() {
+	fmt.Printf("Sender: %s, Recipient: %s, HasContract: %t, InternalTxsNum: %d, IsAllInner: %t, IscrossShardFuncCall: %t, DivisionCount: %d, IsDeleted: %t, IsExecuteCLPA: %t \n",
+		tx.Sender, tx.Recipient, tx.HasContract, len(tx.InternalTxs), tx.IsAllInner, tx.IsCrossShardFuncCall, tx.DivisionCount, tx.IsDeleted, tx.IsExecuteCLPA)
 }
 
 // Encode transaction for storing
@@ -105,5 +102,6 @@ func NewTransaction(sender, recipient string, value *big.Int, nonce uint64, prop
 	tx.RawTxHash = nil
 	tx.HasBroker = false
 	tx.SenderIsBroker = false
+	tx.StateChangeAccounts = make(map[utils.Address]*Account)
 	return tx
 }

@@ -4,6 +4,7 @@ import (
 	"blockEmulator/utils"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 )
 
@@ -20,10 +21,9 @@ type InternalTransaction struct {
 
 	SenderIsContract    bool
 	RecipientIsContract bool
-	IsLastTx            bool
-	IsProcessed         bool
 
 	TypeTraceAddress string
+	CallType         string // ex: "call", "staticcall", "delegatecall", "create"
 }
 
 func (itx *InternalTransaction) PrintTx() string {
@@ -47,9 +47,8 @@ func NewInternalTransaction(sender, recipient, parentTxHash, typeTraceAddress st
 		Time:                proposeTime,
 		SenderIsContract:    senderIsContract,
 		RecipientIsContract: recipientIsContract,
-		IsLastTx:            false,
-		IsProcessed:         false,
 		TypeTraceAddress:    typeTraceAddress,
+		CallType:            strings.Split(typeTraceAddress, "_")[0],
 	}
 
 	return itx

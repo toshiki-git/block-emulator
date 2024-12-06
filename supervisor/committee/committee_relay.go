@@ -124,6 +124,8 @@ func (rthm *RelayCommitteeModule) MsgSendingControl() {
 	}
 }
 
+func (rthm *RelayCommitteeModule) HandleContractGraph(content []byte) {}
+
 // no operation here
 // handle block information when received CBlockInfo message(pbft node commited)pbftノードがコミットしたとき
 func (rthm *RelayCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {

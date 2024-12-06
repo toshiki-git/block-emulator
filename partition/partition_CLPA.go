@@ -361,6 +361,7 @@ func (cs *CLPAState) CLPA_Partition() (map[string]uint64, int) {
 	endTime := time.Now()
 
 	executionTime := endTime.Sub(startTime) // 実行時間を計算
+	fmt.Printf("Execution time: %v\n", executionTime)
 	cs.ExecutionTime = executionTime
 
 	cs.ComputeEdges2Shard()

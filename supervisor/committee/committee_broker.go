@@ -324,3 +324,5 @@ func (bcm *BrokerCommitteeMod) handleTx2ConfirmMag(mag2confirms []*message.Mag2C
 	bcm.brokerModuleLock.Unlock()
 	fmt.Println("finish ctx with adding tx1 and tx2 to txpool,len", num)
 }
+
+func (bcm *BrokerCommitteeMod) HandleContractGraph(content []byte) {}
