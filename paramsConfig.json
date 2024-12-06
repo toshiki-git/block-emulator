@@ -1,28 +1,39 @@
 {
-  "ConsensusMethod": 1,
+  "ConsensusMethod": 4,
 
-  "PbftViewChangeTimeOut": 20000,
+  "PbftViewChangeTimeOut": 200000000000,
 
   "ExpDataRootDir": "expTest",
 
-  "Block_Interval": 5000,
+  "Block_Interval": 10000,
 
   "BlockSize": 2000,
   "BlocksizeInBytes": 200000,
   "UseBlocksizeInBytes": 0,
 
-  "InjectSpeed": 2000,
-  "TotalDataSize": 10000,
-  "TxBatchSize": 16000,
+  "InjectSpeed": 2500,
+  "TotalDataSize": 1500000,
+  "TxBatchSize": 20000,
 
   "BrokerNum": 10,
   "RelayWithMerkleProof": 0,
 
-  "DatasetFile": "./selectedTxs_1000K.csv",
-  "InternalTxFile": "./internalTxs_1000K.csv",
-  "ReconfigTimeGap": 120,
+  "DatasetFile": "./dataset/20000000to20249999_BlockTransaction_2M.csv",
+  "InternalTxFile": "./dataset/20000000to20249999_InternalTransaction_10M.csv",
+  "CLPAIterationNum": 30,
+  "ReconfigTimeGap": 100,
 
-  "Delay": -1,
-  "JitterRange": -1,
-  "Bandwidth": 1000000
+  "MaxUnion": 30,
+  "MaxNodeUnion": 30,
+  "IsMerge": 1,
+
+  "AccountNumInContract": 10000000,
+  "ContractBatchProcessingIntervalMs" : 1000,
+  "ContractBatchSize": 2500,
+  "IsSkipLongInternalTx": 1,
+  "SkipThresholdInternalTx": 10,
+
+  "Delay": 0,
+  "JitterRange": 0,
+  "Bandwidth": 100000000
 }
