@@ -15,9 +15,9 @@ type TestTxNumCount_Relay struct {
 	relay2TxNum []int
 
 	crossShardFunctionCallTxNum []int
-	crossShardFunctionCallTxSum map[string]bool
 	innerSCTxNum                []int
-	innerSCTxSum                map[string]bool
+
+	scTxInfo *SCTxResultInfo
 }
 
 func NewTestTxNumCount_Relay() *TestTxNumCount_Relay {
@@ -30,9 +30,9 @@ func NewTestTxNumCount_Relay() *TestTxNumCount_Relay {
 		relay2TxNum: make([]int, 0),
 
 		crossShardFunctionCallTxNum: make([]int, 0),
-		crossShardFunctionCallTxSum: make(map[string]bool),
 		innerSCTxNum:                make([]int, 0),
-		innerSCTxSum:                make(map[string]bool),
+
+		scTxInfo: NewSCTxResultInfo(),
 	}
 }
 
@@ -72,12 +72,12 @@ func (ttnc *TestTxNumCount_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 
 	for _, tx := range b.InnerSCTxs {
 		txHashStr := string(tx.TxHash)
-		ttnc.innerSCTxSum[txHashStr] = true
+		ttnc.scTxInfo.UpdateSCTxInfo(txHashStr, false, true)
 	}
 
 	for _, tx := range b.CrossShardFunctionCall {
 		txHashStr := string(tx.TxHash)
-		ttnc.crossShardFunctionCallTxSum[txHashStr] = true
+		ttnc.scTxInfo.UpdateSCTxInfo(txHashStr, true, false)
 	}
 }
 
@@ -94,7 +94,7 @@ func (ttnc *TestTxNumCount_Relay) OutputRecord() (perEpochCTXs []float64, totTxN
 		totTxNum += tn
 	}
 
-	totTxNum += float64(len(ttnc.crossShardFunctionCallTxSum) + len(ttnc.innerSCTxSum))
+	totTxNum += float64(ttnc.scTxInfo.GetTotalSCTxNum())
 
 	return perEpochCTXs, totTxNum
 }

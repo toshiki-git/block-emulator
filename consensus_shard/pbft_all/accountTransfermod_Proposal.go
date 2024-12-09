@@ -59,6 +59,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) getPartitionReady() bool {
 
 // send the transactions and the accountState to other leaders
 func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
+	start := time.Now()
 	// generate accout transfer and txs message
 	accountToFetch := make([]string, 0)        // mergedVertexは含めないようにする
 	lastMapid := len(cphm.cdm.ModifiedMap) - 1 // 最初は0
@@ -189,39 +190,49 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 				// ここが問題 PratitionによってAllInnerではなくなる可能性がある
 				if ptx.IsAllInner {
 					if len(ptx.StateChangeAccounts) > 0 {
+						remainingAccount := make(map[string]*core.Account) // 残るAccountを保持
+						sendAccount := make(map[string]*core.Account)      // 送信するAccountを保持
+						isTxSend := false                                  // txSendに移動したかを追跡
+
+						// addrSetに含まれているかどうかで仕分け
 						for _, account := range ptx.StateChangeAccounts {
-							_, ok := addrSet[account.AcAddress]
-							if ok {
+							if _, ok := addrSet[account.AcAddress]; ok {
 								sendAccount[account.AcAddress] = account
 								isTxSend = true
 							} else {
-								// 残るscAddrを保持
 								remainingAccount[account.AcAddress] = account
 							}
-
 						}
 
-						// 全部移動はしない場合
-						if len(ptx.StateChangeAccounts) != len(sendAccount) {
+						// 部分的に移動が発生している場合
+						if isTxSend && len(ptx.StateChangeAccounts) != len(sendAccount) && len(remainingAccount) > 0 {
+							ptx.PrintTx()
+							fmt.Printf("StateChangeAccounts: %d, sendAccount: %d, remainingAccount: %d\n", len(ptx.StateChangeAccounts), len(sendAccount), len(remainingAccount))
 							ptx.IsAllInner = false
 							ptx.IsCrossShardFuncCall = true
 							ptx.DivisionCount++
-							fmt.Println("AllIneerがCrossShardFuncCallに変更されました")
+							fmt.Println("IsAllInnerがCrossShardFuncCallに変更されました")
 						}
 
-						ptx.StateChangeAccounts = remainingAccount
-
+						// 残るアカウントがある場合は ptx に反映して再キュー
 						if len(remainingAccount) > 0 {
+							ptx.StateChangeAccounts = remainingAccount
 							cphm.pbftNode.CurChain.Txpool.TxQueue[firstPtr] = ptx
 							firstPtr++
 						} else {
+							// 残存アカウントがない場合は削除
 							ptx.IsDeleted = true
 						}
 
+						// 送信用アカウントがある場合は ptx をコピーして送信リストへ
 						if isTxSend {
-							ptx.StateChangeAccounts = sendAccount
-							txSend = append(txSend, ptx)
+							// ptxSendはptxのコピーを作成(参照を分離するため)
+							ptxSend := *ptx
+							ptxSend.StateChangeAccounts = sendAccount
+							ptxSend.IsDeleted = false // コピーなので必要に応じて状態を調整
+							txSend = append(txSend, &ptxSend)
 						}
+
 					} else {
 						ptx.PrintTx()
 						fmt.Println("[ERROR] 更新するstateがありません", ptx.Sender, ptx.Recipient)
@@ -286,6 +297,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 	}
 	cphm.pbftNode.pl.Plog.Println("sendAccounts_and_Txs():after sending, The size of tx pool is: ", len(cphm.pbftNode.CurChain.Txpool.TxQueue))
 	cphm.pbftNode.CurChain.Txpool.GetUnlocked()
+	cphm.pbftNode.pl.Plog.Printf("sendAccounts_and_Txs(): かかった時間 %v\n", time.Since(start))
 }
 
 // fetch collect infos
@@ -297,6 +309,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) getCollectOver() bool {
 
 // propose a partition message
 func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message.Request) {
+	start := time.Now()
 	cphm.pbftNode.pl.Plog.Printf("S%dN%d : begin partition proposing\n", cphm.pbftNode.ShardID, cphm.pbftNode.NodeID)
 	// add all data in pool into the set
 	for shradID, at := range cphm.cdm.AccountStateTx {
@@ -408,11 +421,6 @@ func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message
 					cphm.pbftNode.CurChain.Txpool.TxQueue[poolIdx].IsCrossShardFuncCall = false
 					cphm.pbftNode.CurChain.Txpool.TxQueue[poolIdx].IsAllInner = true
 				}
-				if rtx.InternalTxs != nil {
-					fmt.Println("InternalTxsを受け渡しました")
-					cphm.pbftNode.CurChain.Txpool.TxQueue[poolIdx].InternalTxs = rtx.InternalTxs
-					cphm.pbftNode.CurChain.Txpool.TxQueue[poolIdx].IsExecuteCLPA = true
-				}
 			}
 		} else {
 			// rtxを残す
@@ -426,6 +434,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message
 	cphm.pbftNode.pl.Plog.Println("ReceivedNewTxはこれだけになりました: ", len(cphm.cdm.ReceivedNewTx))
 
 	cphm.pbftNode.CurChain.Txpool.AddTxs2Pool(cphm.cdm.ReceivedNewTx)
+	// cphm.pbftNode.CurChain.Txpool.AddTxs2Front(cphm.cdm.ReceivedNewTx)
 	cphm.pbftNode.pl.Plog.Println("proposePartition(): The size of txpool: ", len(cphm.pbftNode.CurChain.Txpool.TxQueue))
 
 	atmaddr := make([]string, 0)
@@ -450,6 +459,9 @@ func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message
 		},
 		ReqTime: time.Now(),
 	}
+
+	cphm.pbftNode.pl.Plog.Printf("proposePartition()の時間: %v", time.Since(start))
+
 	return true, r
 }
 

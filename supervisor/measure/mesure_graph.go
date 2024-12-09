@@ -56,9 +56,27 @@ func (tg *TestModule_CLPA) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 
 func (tg *TestModule_CLPA) HandleExtraMessage([]byte) {}
 
-func (tg *TestModule_CLPA) OutputRecord() (perEpochLatency []float64, totLatency float64) {
+func (tg *TestModule_CLPA) OutputRecord() (epochDurationsInSeconds []float64, averageDurationInSeconds float64) {
+	if len(tg.executionTime) == 0 {
+		return nil, 0
+	}
+
+	// executionTimeを秒形式で変換して格納
+	epochDurationsInSeconds = make([]float64, len(tg.executionTime))
+	var totalDuration time.Duration
+
+	for i, duration := range tg.executionTime {
+		seconds := duration.Seconds()
+		epochDurationsInSeconds[i] = seconds
+		totalDuration += duration
+	}
+
+	// 平均値を計算
+	averageDurationInSeconds = totalDuration.Seconds() / float64(len(tg.executionTime))
+
+	// CSVに書き出し
 	tg.writeToCSV()
-	return nil, 0
+	return epochDurationsInSeconds, averageDurationInSeconds
 }
 
 func (tg *TestModule_CLPA) writeToCSV() {

@@ -14,10 +14,7 @@ type TestCrossTxRate_Relay struct {
 	relay1TxNum []int
 	relay2TxNum []int
 
-	crossShardFunctionCallTxNum []int
-	crossShardFunctionCallTxSum map[string]bool
-	innerSCTxNum                []int
-	innerSCTxSum                map[string]bool
+	scTxInfo *SCTxResultInfo
 
 	totTxNum      []float64
 	totCrossTxNum []float64
@@ -33,10 +30,7 @@ func NewTestCrossTxRate_Relay() *TestCrossTxRate_Relay {
 		relay1TxNum: make([]int, 0),
 		relay2TxNum: make([]int, 0),
 
-		crossShardFunctionCallTxNum: make([]int, 0),
-		crossShardFunctionCallTxSum: make(map[string]bool),
-		innerSCTxNum:                make([]int, 0),
-		innerSCTxSum:                make(map[string]bool),
+		scTxInfo: NewSCTxResultInfo(),
 	}
 }
 
@@ -62,9 +56,6 @@ func (tctr *TestCrossTxRate_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) 
 		tctr.relay2TxNum = append(tctr.relay2TxNum, 0)
 		tctr.normalTxNum = append(tctr.normalTxNum, 0)
 
-		tctr.crossShardFunctionCallTxNum = append(tctr.crossShardFunctionCallTxNum, 0)
-		tctr.innerSCTxNum = append(tctr.innerSCTxNum, 0)
-
 		tctr.epochID++
 	}
 
@@ -72,20 +63,17 @@ func (tctr *TestCrossTxRate_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) 
 	tctr.relay1TxNum[epochid] += r1TxNum
 	tctr.relay2TxNum[epochid] += r2TxNum
 
-	tctr.crossShardFunctionCallTxNum[epochid] += len(b.CrossShardFunctionCall)
-	tctr.innerSCTxNum[epochid] += len(b.InnerSCTxs)
-
 	tctr.totCrossTxNum[epochid] += float64(r1TxNum+r2TxNum) / 2
 	tctr.totTxNum[epochid] += float64(r1TxNum+r2TxNum)/2 + float64(len(b.InnerShardTxs))
 
 	for _, tx := range b.InnerSCTxs {
 		txHashStr := string(tx.TxHash)
-		tctr.innerSCTxSum[txHashStr] = true
+		tctr.scTxInfo.UpdateSCTxInfo(txHashStr, false, true)
 	}
 
 	for _, tx := range b.CrossShardFunctionCall {
 		txHashStr := string(tx.TxHash)
-		tctr.crossShardFunctionCallTxSum[txHashStr] = true
+		tctr.scTxInfo.UpdateSCTxInfo(txHashStr, true, false)
 	}
 }
 
@@ -104,13 +92,15 @@ func (tctr *TestCrossTxRate_Relay) OutputRecord() (perEpochCTXratio []float64, t
 		allEpoch_totTxNum += totTxN
 		allEpoch_ctxNum += tctr.totCrossTxNum[eid]
 	}
-	perEpochCTXratio = append(perEpochCTXratio, allEpoch_totTxNum)
-	perEpochCTXratio = append(perEpochCTXratio, allEpoch_ctxNum)
 
-	allEpoch_ctxNum += float64(len(tctr.crossShardFunctionCallTxSum))
-	allEpoch_totTxNum += float64(len(tctr.crossShardFunctionCallTxSum) + len(tctr.innerSCTxSum))
+	fmt.Printf("before: allEpoch_ctxNum: %f, allEpoch_totTxNum: %f\n", allEpoch_ctxNum, allEpoch_totTxNum)
 
-	fmt.Printf("allEpoch_ctxNum: %f, allEpoch_totTxNum: %f\n", allEpoch_ctxNum, allEpoch_totTxNum)
+	allEpoch_ctxNum += float64(tctr.scTxInfo.GetCrossShardSCTxNum())
+	allEpoch_totTxNum += float64(tctr.scTxInfo.GetTotalSCTxNum())
+
+	fmt.Printf("crossShardFunctionCallTxSum: %d, innerSCTxSum: %d, Total: %d\n", tctr.scTxInfo.GetCrossShardSCTxNum(), tctr.scTxInfo.GetInnerSCTxNum(), tctr.scTxInfo.GetTotalSCTxNum())
+
+	fmt.Printf("計算で使われてる after: allEpoch_ctxNum: %f, allEpoch_totTxNum: %f\n", allEpoch_ctxNum, allEpoch_totTxNum)
 
 	return perEpochCTXratio, allEpoch_ctxNum / allEpoch_totTxNum
 }
@@ -124,8 +114,6 @@ func (tctr *TestCrossTxRate_Relay) writeToCSV() {
 		"Normal tx # in this epoch",
 		"Relay1 tx # in this epoch",
 		"Relay2 tx # in this epoch",
-		"CrossShardFunctionCall tx # in this epoch",
-		"InnerSCTx # in this epoch",
 		"CTX ratio of this epoch",
 	}
 	measureVals := make([][]string, 0)
@@ -138,8 +126,6 @@ func (tctr *TestCrossTxRate_Relay) writeToCSV() {
 			strconv.Itoa(tctr.normalTxNum[eid]),
 			strconv.Itoa(tctr.relay1TxNum[eid]),
 			strconv.Itoa(tctr.relay2TxNum[eid]),
-			strconv.Itoa(tctr.crossShardFunctionCallTxNum[eid]),
-			strconv.Itoa(tctr.innerSCTxNum[eid]),
 			strconv.FormatFloat(tctr.totCrossTxNum[eid]/totTxInE, 'f', 4, 64),
 		}
 		measureVals = append(measureVals, csvLine)

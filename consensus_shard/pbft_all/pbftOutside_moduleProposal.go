@@ -424,11 +424,15 @@ func (prom *ProposalRelayOutsideModule) processBatchResponses(responses []*messa
 							tx.InternalTxs = res.Tx.InternalTxs
 							tx.IsAllInner = true
 						} else {
-							OriginalRecipientShardID := prom.pbftNode.CurChain.Get_PartitionMap(res.Tx.Recipient)
+							/* OriginalRecipientShardID := prom.pbftNode.CurChain.Get_PartitionMap(res.Tx.Recipient)
 							if shardID == OriginalRecipientShardID {
 								tx.InternalTxs = res.Tx.InternalTxs
 								tx.IsExecuteCLPA = true
-							}
+							} */
+
+							tx.InternalTxs = res.Tx.InternalTxs
+							tx.IsExecuteCLPA = true
+
 							tx.IsCrossShardFuncCall = true
 						}
 

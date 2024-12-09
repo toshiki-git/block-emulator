@@ -37,6 +37,7 @@ type ProposalCommitteeModule struct {
 	modifiedMap             map[string]uint64 // key: address, value: shardID
 	clpaLastRunningTime     time.Time
 	clpaFreq                int
+	IsCLPAExecuted          map[string]bool // txhash -> bool
 	MergedContracts         map[string]partition.Vertex
 	ReversedMergedContracts map[partition.Vertex][]string
 	UnionFind               *partition.UnionFind // Union-Find構造体
@@ -67,6 +68,7 @@ func NewProposalCommitteeModule(Ip_nodeTable map[uint64]map[uint64]string, Ss *s
 		ClpaGraphHistory:    make([]*partition.CLPAState, 0),
 		modifiedMap:         make(map[string]uint64),
 		clpaFreq:            clpaFrequency,
+		IsCLPAExecuted:      make(map[string]bool),
 		clpaLastRunningTime: time.Time{},
 		MergedContracts:     make(map[string]partition.Vertex),
 		UnionFind:           partition.NewUnionFind(),
@@ -262,6 +264,7 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 				pcm.clpaLastRunningTime = time.Now()
 			}
 
+			pcm.sl.Slog.Printf("Current Skiped txs: %d\n", skipTxCnt)
 			pcm.txSending(txlist)
 
 			// reset the variants about tx sending
@@ -273,6 +276,9 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 		if !pcm.clpaLastRunningTime.IsZero() && time.Since(pcm.clpaLastRunningTime) >= time.Duration(pcm.clpaFreq)*time.Second {
 			pcm.clpaLock.Lock()
 			clpaCnt++
+
+			pcm.sl.Slog.Println("CLPAを開始します。")
+			start := time.Now()
 
 			// PartitionModified マップの書き込み処理
 			partitionFile, err := os.OpenFile(params.ExpDataRootDir+"/before_partition_modified.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -310,6 +316,8 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 			}
 			pcm.clpaLastRunningTime = time.Now()
 			pcm.sl.Slog.Println("Next CLPA epoch begins. ")
+			duration := time.Since(start)
+			pcm.sl.Slog.Printf("CLPAの全体の実行時間は %v.\n", duration)
 		}
 
 		if pcm.nowDataNum == pcm.dataTotalNum {
@@ -325,6 +333,9 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 		if time.Since(pcm.clpaLastRunningTime) >= time.Duration(pcm.clpaFreq)*time.Second {
 			pcm.clpaLock.Lock()
 			clpaCnt++
+
+			pcm.sl.Slog.Println("CLPAを開始します。")
+			start := time.Now()
 
 			// PartitionModified マップの書き込み処理
 			partitionFile, err := os.OpenFile(params.ExpDataRootDir+"/before_partition_modified.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -376,6 +387,8 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 				time.Sleep(time.Second)
 			}
 			pcm.sl.Slog.Println("Next CLPA epoch begins. ")
+			duration := time.Since(start)
+			pcm.sl.Slog.Printf("CLPAの全体の実行時間は %v.\n", duration)
 			pcm.clpaLastRunningTime = time.Now()
 		}
 	}
@@ -457,6 +470,7 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	start := time.Now()
 	pcm.sl.Slog.Printf("Supervisor: received from shard %d in epoch %d.\n", b.SenderShardID, b.Epoch)
 	IsChangeEpoch := false
+	pcm.sl.Slog.Printf("clpaの実行累計: %d", len(pcm.IsCLPAExecuted))
 	if atomic.CompareAndSwapInt32(&pcm.curEpoch, int32(b.Epoch-1), int32(b.Epoch)) {
 		pcm.sl.Slog.Println("this curEpoch is updated", b.Epoch)
 		IsChangeEpoch = true
@@ -499,7 +513,9 @@ func (pcm *ProposalCommitteeModule) updateCLPAResult(b *message.BlockInfoMsg) {
 func (pcm *ProposalCommitteeModule) processTransactions(txs []*core.Transaction) {
 	skipCount := 0
 	for _, tx := range txs {
-		if tx.IsCrossShardFuncCall && !tx.IsExecuteCLPA {
+		if _, ok := pcm.IsCLPAExecuted[string(tx.TxHash)]; !ok {
+			pcm.IsCLPAExecuted[string(tx.TxHash)] = true
+		} else {
 			skipCount++
 			continue
 		}
@@ -518,7 +534,9 @@ func (pcm *ProposalCommitteeModule) processTransactions(txs []*core.Transaction)
 			pcm.processInternalTx(itx)
 		}
 	}
-	pcm.sl.Slog.Printf("IsCrossShardFuncCallで %d 回スキップしました。\n", skipCount)
+	if skipCount > 0 {
+		pcm.sl.Slog.Printf("IsCrossShardFuncCallで %d 回スキップしました。\n", skipCount)
+	}
 }
 
 // 内部トランザクション処理
