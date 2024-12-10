@@ -107,6 +107,7 @@ func (ttnc *TestTxNumCount_Relay) writeToCSV() {
 		"Normal tx # in this epoch",
 		"Relay1 tx # in this epoch",
 		"Relay2 tx # in this epoch",
+
 		"CrossShardFunctionCall tx # in this epoch",
 		"InnerSCTx # in this epoch",
 	}

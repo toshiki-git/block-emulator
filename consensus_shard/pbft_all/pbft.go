@@ -179,13 +179,21 @@ func NewPbftNode(shardID, nodeID uint64, pcc *params.ChainConfig, messageHandleT
 		}
 	case "ProposalBroker":
 		ncdm := dataSupport.NewCLPADataSupport()
+		ncfcpm := dataSupport.NewCrossFunctionCallPoolManager()
 		p.ihm = &ProposalBrokerPbftInsideExtraHandleMod{
 			pbftNode: p,
 			cdm:      ncdm,
+			cfcpm:    ncfcpm,
 		}
 		p.ohm = &ProposalBrokerOutsideModule{
 			pbftNode: p,
 			cdm:      ncdm,
+			cfcpm:    ncfcpm,
+		}
+		if ohmModule, ok := p.ohm.(*ProposalBrokerOutsideModule); ok {
+			if uint64(p.view.Load()) == p.NodeID {
+				go ohmModule.StartBatchProcessing(params.ContractBatchSize, time.Duration(params.ContractBatchProcessingIntervalMs)*time.Millisecond)
+			}
 		}
 	default:
 		p.ihm = &RawRelayPbftExtraHandleMod{

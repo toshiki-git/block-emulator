@@ -112,15 +112,15 @@ func (prom *ProposalRelayOutsideModule) handlePartitionReady(content []byte) {
 
 // when the message from other shard arriving, it should be added into the message pool
 func (prom *ProposalRelayOutsideModule) handleAccountStateAndTxMsg(content []byte) {
+	// マップへの書き込みを排他制御
+	prom.cdm.CollectLock.Lock()
+	defer prom.cdm.CollectLock.Unlock()
+
 	at := new(message.AccountStateAndTx)
 	err := json.Unmarshal(content, at)
 	if err != nil {
 		log.Panic(err) // エラーの詳細を出力
 	}
-
-	// マップへの書き込みを排他制御
-	prom.cdm.CollectLock.Lock()
-	defer prom.cdm.CollectLock.Unlock()
 
 	prom.cdm.AccountStateTx[at.FromShard] = at
 	prom.pbftNode.pl.Plog.Printf("S%dN%d has added the accoutStateandTx from %d to pool\n", prom.pbftNode.ShardID, prom.pbftNode.NodeID, at.FromShard)
@@ -148,7 +148,7 @@ func (prom *ProposalRelayOutsideModule) handleContractInject(content []byte) {
 
 	// TxPoolにトランザクションを追加
 	if len(innerTxList) > 0 {
-		prom.pbftNode.CurChain.Txpool.AddTxs2Pool(innerTxList)
+		prom.pbftNode.CurChain.Txpool.AddTxs2Front(innerTxList)
 		prom.pbftNode.pl.Plog.Printf("handleContractInject: %d 件のトランザクションをTxPoolに追加しました。\n", len(innerTxList))
 	} else {
 		prom.pbftNode.pl.Plog.Println("handleContractInject: TxPoolに追加するトランザクションがありませんでした。")
@@ -573,7 +573,7 @@ func (prom *ProposalRelayOutsideModule) sendInjectTransactions(sendToShard map[u
 		sendMsg := message.MergeMessage(message.CInject, itByte)
 		// リーダーノードに送信
 		go networks.TcpDial(sendMsg, prom.pbftNode.ip_nodeTable[sid][0])
-		prom.pbftNode.pl.Plog.Printf("Shard %d に %d 件の Inject トランザクションを送信しました。\n", sid, len(txs))
+		// prom.pbftNode.pl.Plog.Printf("Shard %d に %d 件の Inject トランザクションを送信しました。\n", sid, len(txs))
 	}
 }
 

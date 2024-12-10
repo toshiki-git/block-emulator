@@ -433,8 +433,8 @@ func (cphm *ProposalPbftInsideExtraHandleMod) proposePartition() (bool, *message
 
 	cphm.pbftNode.pl.Plog.Println("ReceivedNewTxはこれだけになりました: ", len(cphm.cdm.ReceivedNewTx))
 
-	cphm.pbftNode.CurChain.Txpool.AddTxs2Pool(cphm.cdm.ReceivedNewTx)
-	// cphm.pbftNode.CurChain.Txpool.AddTxs2Front(cphm.cdm.ReceivedNewTx)
+	// cphm.pbftNode.CurChain.Txpool.AddTxs2Pool(cphm.cdm.ReceivedNewTx)
+	cphm.pbftNode.CurChain.Txpool.AddTxs2Front(cphm.cdm.ReceivedNewTx)
 	cphm.pbftNode.pl.Plog.Println("proposePartition(): The size of txpool: ", len(cphm.pbftNode.CurChain.Txpool.TxQueue))
 
 	atmaddr := make([]string, 0)

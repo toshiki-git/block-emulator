@@ -2,6 +2,7 @@ package measure
 
 import (
 	"blockEmulator/message"
+	"fmt"
 	"strconv"
 	"time"
 )
@@ -14,6 +15,8 @@ type TestModule_avgTPS_Broker struct {
 	broker2TxNum []int // record how many broker2 txs in an epoch.
 	normalTxNum  []int // record how many normal txs in an epoch.
 
+	scTxInfo *SCTxResultInfo
+
 	startTime []time.Time // record when the epoch starts
 	endTime   []time.Time // record when the epoch ends
 }
@@ -24,6 +27,8 @@ func NewTestModule_avgTPS_Broker() *TestModule_avgTPS_Broker {
 		excutedTxNum: make([]float64, 0),
 		startTime:    make([]time.Time, 0),
 		endTime:      make([]time.Time, 0),
+
+		scTxInfo: NewSCTxResultInfo(),
 
 		broker1TxNum: make([]int, 0),
 		broker2TxNum: make([]int, 0),
@@ -76,6 +81,16 @@ func (tat *TestModule_avgTPS_Broker) UpdateMeasureRecord(b *message.BlockInfoMsg
 	if tat.endTime[epochid].IsZero() || latestTime.After(tat.endTime[epochid]) {
 		tat.endTime[epochid] = latestTime
 	}
+
+	for _, tx := range b.InnerSCTxs {
+		txHashStr := string(tx.TxHash)
+		tat.scTxInfo.UpdateSCTxInfo(txHashStr, false, true)
+	}
+
+	for _, tx := range b.CrossShardFunctionCall {
+		txHashStr := string(tx.TxHash)
+		tat.scTxInfo.UpdateSCTxInfo(txHashStr, true, false)
+	}
 }
 
 func (tat *TestModule_avgTPS_Broker) HandleExtraMessage([]byte) {}
@@ -101,7 +116,13 @@ func (tat *TestModule_avgTPS_Broker) OutputRecord() (perEpochTPS []float64, tota
 			lTime = tat.endTime[eid]
 		}
 	}
+
+	totalTxNum += float64(tat.scTxInfo.GetTotalSCTxNum())
+	fmt.Printf("earliestTime: %v, latestTime: %v, diff: %v\n", eTime, lTime, lTime.Sub(eTime))
+	fmt.Printf("totalTPS = txnum(%f) / time(%f)\n", totalTxNum, lTime.Sub(eTime).Seconds())
+
 	totalTPS = totalTxNum / (lTime.Sub(eTime).Seconds())
+
 	return
 }
 

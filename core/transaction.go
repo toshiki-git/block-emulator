@@ -46,8 +46,8 @@ type Transaction struct {
 }
 
 func (tx *Transaction) PrintTx() {
-	fmt.Printf("Sender: %s, Recipient: %s, HasContract: %t, InternalTxsNum: %d, IsAllInner: %t, IscrossShardFuncCall: %t, DivisionCount: %d, IsDeleted: %t, IsExecuteCLPA: %t \n",
-		tx.Sender, tx.Recipient, tx.HasContract, len(tx.InternalTxs), tx.IsAllInner, tx.IsCrossShardFuncCall, tx.DivisionCount, tx.IsDeleted, tx.IsExecuteCLPA)
+	fmt.Printf("Sender: %s, Recipient: %s, HasContract: %t, InternalTxsNum: %d, IsAllInner: %t, IscrossShardFuncCall: %t, DivisionCount: %d, IsDeleted: %t, IsExecuteCLPA: %t, HasBroker: %t, SenderIsBroker: %t\n",
+		tx.Sender, tx.Recipient, tx.HasContract, len(tx.InternalTxs), tx.IsAllInner, tx.IsCrossShardFuncCall, tx.DivisionCount, tx.IsDeleted, tx.IsExecuteCLPA, tx.HasBroker, tx.SenderIsBroker)
 }
 
 // Encode transaction for storing

@@ -120,10 +120,9 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commi
 
 		loopTime := time.Now()
 		for _, tx := range block.Body {
-
-			ssid := pphm.pbftNode.CurChain.Get_PartitionMap(tx.Sender)
-			rsid := pphm.pbftNode.CurChain.Get_PartitionMap(tx.Recipient)
 			if !tx.HasContract {
+				ssid := pphm.pbftNode.CurChain.Get_PartitionMap(tx.Sender)
+				rsid := pphm.pbftNode.CurChain.Get_PartitionMap(tx.Recipient)
 				if !tx.Relayed && ssid != pphm.pbftNode.ShardID {
 					pphm.pbftNode.pl.Plog.Printf(
 						"[ERROR] Transaction relay status mismatch: expected ShardID=%d, got ssid=%d, rsid=%d. Sender=%s, Recipient=%s, Relayed=%t",

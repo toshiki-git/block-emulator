@@ -11,31 +11,43 @@ import (
 	"log"
 	"strconv"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 type ProposalBrokerPbftInsideExtraHandleMod struct {
 	cdm      *dataSupport.Data_supportCLPA
 	pbftNode *PbftConsensusNode
+	cfcpm    *dataSupport.CrossFunctionCallPoolManager
 }
 
 // propose request with different types
 func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) HandleinPropose() (bool, *message.Request) {
-	if pbhm.cdm.PartitionOn {
-		pbhm.sendPartitionReady()
+	if pbhm.cdm.PartitionOn { // handlePartitionMsg()でPartitionOnがtrueになる SupervisorからすべてのリーダにCPartitionMsgを受け取り実行する
+		pbhm.pbftNode.pl.Plog.Println("パーティションブロックのProposeを行います。")
+		pbhm.sendPartitionReady() // Leader to Other Shard Leaders
 		for !pbhm.getPartitionReady() {
+			pbhm.pbftNode.pl.Plog.Println("各シャードのPartitionReadyがすべてtrueになるまでgetPartitionReady()で待機します。")
 			time.Sleep(time.Second)
 		}
+		pbhm.pbftNode.pl.Plog.Println("各シャードのPartitionReadyがすべてtrueになりました。")
 		// send accounts and txs
-		pbhm.sendAccounts_and_Txs()
+		pbhm.sendAccounts_and_Txs() // Leader to Other Shard Leaders
 		// propose a partition
 		for !pbhm.getCollectOver() {
 			time.Sleep(time.Second)
+			pbhm.pbftNode.pl.Plog.Println("各シャードのCollectOverがすべてtrueになるまでgetCollectOver()で待機します。")
 		}
 		return pbhm.proposePartition()
 	}
 
 	// ELSE: propose a block
+	// TODO: ここでSCの実行とtraceの決定
+	pbhm.pbftNode.pl.Plog.Println("TXブロックのProposeを行います。")
+	pbhm.pbftNode.pl.Plog.Println("TxPool Size Before PackTX: ", len(pbhm.pbftNode.CurChain.Txpool.TxQueue))
 	block := pbhm.pbftNode.CurChain.GenerateBlock(int32(pbhm.pbftNode.NodeID))
+
+	pbhm.pbftNode.pl.Plog.Println("TxPool Size After PackTX: ", len(pbhm.pbftNode.CurChain.Txpool.TxQueue))
 	r := &message.Request{
 		RequestType: message.BlockRequest,
 		ReqTime:     time.Now(),
@@ -74,18 +86,23 @@ func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) HandleinPrepare(pmsg *messag
 
 // the operation in commit.
 func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) HandleinCommit(cmsg *message.Commit) bool {
+	start := time.Now()
 	r := pbhm.pbftNode.requestPool[string(cmsg.Digest)]
 	// requestType ...
 	if r.RequestType == message.PartitionReq {
 		// if a partition Requst ...
 		atm := message.DecodeAccountTransferMsg(r.Msg.Content)
 		pbhm.accountTransfer_do(atm)
+		pbhm.pbftNode.pl.Plog.Printf("accountTransfer_doが完了しました。\n")
 		return true
 	}
 	// if a block request ...
 	block := core.DecodeB(r.Msg.Content)
 	pbhm.pbftNode.pl.Plog.Printf("S%dN%d : adding the block %d...now height = %d \n", pbhm.pbftNode.ShardID, pbhm.pbftNode.NodeID, block.Header.Number, pbhm.pbftNode.CurChain.CurrentBlock.Header.Number)
+	fmt.Printf("State Root in HandleinCommit(): %s\n", common.BytesToHash(pbhm.pbftNode.CurChain.CurrentBlock.Header.StateRoot))
+	startAddBlock := time.Now()
 	pbhm.pbftNode.CurChain.AddBlock(block)
+	pbhm.pbftNode.pl.Plog.Printf("[DEBUG] AddBlock完了: 所要時間=%s", time.Since(startAddBlock))
 	pbhm.pbftNode.pl.Plog.Printf("S%dN%d : added the block %d... \n", pbhm.pbftNode.ShardID, pbhm.pbftNode.NodeID, block.Header.Number)
 	pbhm.pbftNode.CurChain.PrintBlockChain()
 
@@ -97,43 +114,80 @@ func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) HandleinCommit(cmsg *message
 		broker1Txs := make([]*core.Transaction, 0)
 		broker2Txs := make([]*core.Transaction, 0)
 
-		// generate block infos
-		for _, tx := range block.Body {
-			isBroker1Tx := tx.Sender == tx.OriginalSender
-			isBroker2Tx := tx.Recipient == tx.FinalRecipient
+		crossShardFunctionCall := make([]*core.Transaction, 0)
+		innerSCTxs := make([]*core.Transaction, 0)
 
-			senderIsInshard := pbhm.pbftNode.CurChain.Get_PartitionMap(tx.Sender) == pbhm.pbftNode.ShardID
-			recipientIsInshard := pbhm.pbftNode.CurChain.Get_PartitionMap(tx.Recipient) == pbhm.pbftNode.ShardID
-			if isBroker1Tx && !senderIsInshard {
-				log.Panic("Err tx1")
-			}
-			if isBroker2Tx && !recipientIsInshard {
-				log.Panic("Err tx2")
-			}
-			if tx.RawTxHash == nil {
-				if tx.HasBroker {
-					if tx.SenderIsBroker && !recipientIsInshard {
-						log.Panic("err tx 1 - recipient")
+		loopTime := time.Now()
+		for _, tx := range block.Body {
+			if !tx.HasContract {
+				isBroker1Tx := tx.Sender == tx.OriginalSender
+				isBroker2Tx := tx.Recipient == tx.FinalRecipient
+
+				senderIsInshard := pbhm.pbftNode.CurChain.Get_PartitionMap(tx.Sender) == pbhm.pbftNode.ShardID
+				recipientIsInshard := pbhm.pbftNode.CurChain.Get_PartitionMap(tx.Recipient) == pbhm.pbftNode.ShardID
+				if isBroker1Tx && !senderIsInshard {
+					tx.PrintTx()
+					fmt.Println("[ERROR] Err tx1")
+					// log.Panic("Err tx1")
+				}
+				if isBroker2Tx && !recipientIsInshard {
+					tx.PrintTx()
+					fmt.Println("[ERROR] Err tx2")
+					// log.Panic("Err tx2")
+				}
+				if tx.RawTxHash == nil {
+					if tx.HasBroker {
+						if tx.SenderIsBroker && !recipientIsInshard {
+							tx.PrintTx()
+							fmt.Println("[ERROR] err tx 1 - recipient")
+							// log.Panic("err tx 1 - recipient")
+						}
+						if !tx.SenderIsBroker && !senderIsInshard {
+							tx.PrintTx()
+							fmt.Println("[ERROR] err tx 1 - sender")
+							// log.Panic("err tx 1 - sender")
+						}
+					} else {
+						if !senderIsInshard || !recipientIsInshard {
+							tx.PrintTx()
+							fmt.Println("[ERROR] err tx - without broker")
+							// log.Panic("err tx - without broker")
+						}
 					}
-					if !tx.SenderIsBroker && !senderIsInshard {
-						log.Panic("err tx 1 - sender")
-					}
+				}
+
+				if isBroker2Tx {
+					broker2Txs = append(broker2Txs, tx)
+				} else if isBroker1Tx {
+					broker1Txs = append(broker1Txs, tx)
 				} else {
-					if !senderIsInshard || !recipientIsInshard {
-						log.Panic("err tx - without broker")
-					}
+					innerShardTxs = append(innerShardTxs, tx)
 				}
 			}
 
-			if isBroker2Tx {
-				broker2Txs = append(broker2Txs, tx)
-			} else if isBroker1Tx {
-				broker1Txs = append(broker1Txs, tx)
-			} else {
-				innerShardTxs = append(innerShardTxs, tx)
+			//TODO: ここにInternal TXを持っている場合は追加の処理を書く
+			if tx.HasContract {
+				if tx.IsCrossShardFuncCall {
+					crossShardFunctionCall = append(crossShardFunctionCall, tx)
+					err := pbhm.cfcpm.SClock.UnlockAllByRequestID(tx.RequestID)
+
+					if err != nil {
+						// TODO: Unlockするのは1シャードだけにする
+						// fmt.Println(err)
+					}
+				} else if tx.IsAllInner {
+					// Internal TXを持つが、すべて同じshard内で完結(txも含め)する場合
+					innerSCTxs = append(innerSCTxs, tx)
+				} else {
+					fmt.Println("分類できないInternal TXがあります。")
+				}
 			}
+
 		}
+		pbhm.pbftNode.pl.Plog.Printf("[DEBUG] loopTime: %s", time.Since(loopTime))
+
 		// send seqID
+		// TODO: これが必要かどうか検討　relayのpphm.pbftNode.RelayMsgSend()これに対応するもの
 		for sid := uint64(0); sid < pbhm.pbftNode.pbftChainConfig.ShardNums; sid++ {
 			if sid == pbhm.pbftNode.ShardID {
 				continue
@@ -147,7 +201,7 @@ func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) HandleinCommit(cmsg *message
 				log.Panic()
 			}
 			msg_send := message.MergeMessage(message.CSeqIDinfo, sByte)
-			networks.TcpDial(msg_send, pbhm.pbftNode.ip_nodeTable[sid][0])
+			go networks.TcpDial(msg_send, pbhm.pbftNode.ip_nodeTable[sid][0])
 			pbhm.pbftNode.pl.Plog.Printf("S%dN%d : sended sequence ids to %d\n", pbhm.pbftNode.ShardID, pbhm.pbftNode.NodeID, sid)
 		}
 		// send txs excuted in this block to the listener
@@ -155,28 +209,41 @@ func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) HandleinCommit(cmsg *message
 		bim := message.BlockInfoMsg{
 			BlockBodyLength: len(block.Body),
 			InnerShardTxs:   innerShardTxs,
-			Broker1Txs:      broker1Txs,
-			Broker2Txs:      broker2Txs,
 			Epoch:           int(pbhm.cdm.AccountTransferRound),
-			SenderShardID:   pbhm.pbftNode.ShardID,
-			ProposeTime:     r.ReqTime,
-			CommitTime:      time.Now(),
+
+			Broker1Txs: broker1Txs,
+			Broker2Txs: broker2Txs,
+
+			CrossShardFunctionCall: crossShardFunctionCall,
+			InnerSCTxs:             innerSCTxs,
+
+			SenderShardID: pbhm.pbftNode.ShardID,
+			ProposeTime:   r.ReqTime,
+			CommitTime:    time.Now(),
 		}
 		bByte, err := json.Marshal(bim)
 		if err != nil {
 			log.Panic()
 		}
 		msg_send := message.MergeMessage(message.CBlockInfo, bByte)
-		networks.TcpDial(msg_send, pbhm.pbftNode.ip_nodeTable[params.SupervisorShard][0])
+		go networks.TcpDial(msg_send, pbhm.pbftNode.ip_nodeTable[params.SupervisorShard][0])
 		pbhm.pbftNode.pl.Plog.Printf("S%dN%d : sended excuted txs\n", pbhm.pbftNode.ShardID, pbhm.pbftNode.NodeID)
+
 		pbhm.pbftNode.CurChain.Txpool.GetLocked()
+
 		metricName := []string{
 			"Block Height",
 			"EpochID of this block",
 			"TxPool Size",
 			"# of all Txs in this block",
-			"# of Broker1 Txs in this block",
-			"# of Broker2 Txs in this block",
+
+			"# of Inner Account Txs in this block",
+			"# of Broker1 (ctx) Txs in this block",
+			"# of Broker2 (ctx) Txs in this block",
+
+			"# of Cross Shard Function Call Txs in this block",
+			"# of Inner SC Txs in this block",
+
 			"TimeStamp - Propose (unixMill)",
 			"TimeStamp - Commit (unixMill)",
 
@@ -189,8 +256,14 @@ func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) HandleinCommit(cmsg *message
 			strconv.Itoa(bim.Epoch),
 			strconv.Itoa(len(pbhm.pbftNode.CurChain.Txpool.TxQueue)),
 			strconv.Itoa(len(block.Body)),
+
+			strconv.Itoa(len(innerShardTxs)),
 			strconv.Itoa(len(broker1Txs)),
 			strconv.Itoa(len(broker2Txs)),
+
+			strconv.Itoa(len(crossShardFunctionCall)),
+			strconv.Itoa(len(innerSCTxs)),
+
 			strconv.FormatInt(bim.ProposeTime.UnixMilli(), 10),
 			strconv.FormatInt(bim.CommitTime.UnixMilli(), 10),
 
@@ -201,6 +274,8 @@ func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) HandleinCommit(cmsg *message
 		pbhm.pbftNode.writeCSVline(metricName, metricVal)
 		pbhm.pbftNode.CurChain.Txpool.GetUnlocked()
 	}
+	elapsed := time.Since(start)
+	pbhm.pbftNode.pl.Plog.Printf("HandleinCommitにかかった時間は %s \n", elapsed)
 	return true
 }
 
