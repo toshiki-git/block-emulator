@@ -3,6 +3,7 @@ package measure
 import (
 	"blockEmulator/message"
 	"strconv"
+	"sync"
 )
 
 // to test Tx number
@@ -18,6 +19,8 @@ type TestTxNumCount_Relay struct {
 	innerSCTxNum                []int
 
 	scTxInfo *SCTxResultInfo
+
+	lock sync.Mutex
 }
 
 func NewTestTxNumCount_Relay() *TestTxNumCount_Relay {
@@ -44,6 +47,10 @@ func (ttnc *TestTxNumCount_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 	if b.BlockBodyLength == 0 { // empty block
 		return
 	}
+
+	ttnc.lock.Lock()
+	defer ttnc.lock.Unlock()
+
 	epochid := b.Epoch
 	r1TxNum := len(b.Relay1Txs)
 	r2TxNum := len(b.Relay2Txs)

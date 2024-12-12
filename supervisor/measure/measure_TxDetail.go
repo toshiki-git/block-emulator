@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -37,6 +38,8 @@ type TestTxDetail struct {
 
 	crossShardFunctionCallTxNum int
 	innerSCTxNum                int
+
+	lock sync.Mutex
 }
 
 func NewTestTxDetail() *TestTxDetail {
@@ -53,6 +56,9 @@ func (ttd *TestTxDetail) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 	if b.BlockBodyLength == 0 { // empty block
 		return
 	}
+
+	ttd.lock.Lock()
+	defer ttd.lock.Unlock()
 
 	for _, innertx := range b.InnerShardTxs {
 		if _, ok := ttd.txHash2DetailTime[string(innertx.TxHash)]; !ok {

@@ -4,6 +4,7 @@ import (
 	"blockEmulator/message"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -19,6 +20,8 @@ type TestModule_CLPA struct {
 	mergedVertexNum   []int
 	mergedContractNum []int
 	executionTime     []time.Duration
+
+	lock sync.Mutex
 }
 
 func NewTestModule_CLPA() *TestModule_CLPA {
@@ -43,6 +46,10 @@ func (tg *TestModule_CLPA) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 	if b.CLPAResult == nil {
 		return
 	}
+
+	tg.lock.Lock()
+	defer tg.lock.Unlock()
+
 	tg.epochID = append(tg.epochID, b.Epoch-1)
 	tg.vertexsNumInShard = append(tg.vertexsNumInShard, b.CLPAResult.VertexsNumInShard)
 	tg.vertexNum = append(tg.vertexNum, sum(b.CLPAResult.VertexsNumInShard))

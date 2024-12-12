@@ -4,6 +4,7 @@ import (
 	"blockEmulator/message"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,8 @@ type TestModule_avgTPS_Relay struct {
 
 	startTime []time.Time // record when the epoch starts
 	endTime   []time.Time // record when the epoch ends
+
+	lock sync.Mutex
 }
 
 func NewTestModule_avgTPS_Relay() *TestModule_avgTPS_Relay {
@@ -46,6 +49,9 @@ func (tat *TestModule_avgTPS_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg)
 	if b.BlockBodyLength == 0 { // empty block
 		return
 	}
+
+	tat.lock.Lock()
+	defer tat.lock.Unlock()
 
 	epochid := b.Epoch
 	earliestTime := b.ProposeTime

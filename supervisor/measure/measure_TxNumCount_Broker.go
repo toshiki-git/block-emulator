@@ -3,6 +3,7 @@ package measure
 import (
 	"blockEmulator/message"
 	"strconv"
+	"sync"
 )
 
 // to test Tx number
@@ -18,6 +19,8 @@ type TestTxNumCount_Broker struct {
 	innerSCTxNum                []int
 
 	scTxInfo *SCTxResultInfo
+
+	lock sync.Mutex
 }
 
 func NewTestTxNumCount_Broker() *TestTxNumCount_Broker {
@@ -44,6 +47,10 @@ func (ttnc *TestTxNumCount_Broker) UpdateMeasureRecord(b *message.BlockInfoMsg) 
 	if b.BlockBodyLength == 0 { // empty block
 		return
 	}
+
+	ttnc.lock.Lock()
+	defer ttnc.lock.Unlock()
+
 	epochid := b.Epoch
 	b1TxNum := len(b.Broker1Txs)
 	b2TxNum := len(b.Broker2Txs)

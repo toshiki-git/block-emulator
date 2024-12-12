@@ -4,6 +4,7 @@ import (
 	"blockEmulator/message"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -19,6 +20,8 @@ type TestModule_avgTPS_Broker struct {
 
 	startTime []time.Time // record when the epoch starts
 	endTime   []time.Time // record when the epoch ends
+
+	lock sync.Mutex
 }
 
 func NewTestModule_avgTPS_Broker() *TestModule_avgTPS_Broker {
@@ -45,6 +48,9 @@ func (tat *TestModule_avgTPS_Broker) UpdateMeasureRecord(b *message.BlockInfoMsg
 	if b.BlockBodyLength == 0 { // empty block
 		return
 	}
+
+	tat.lock.Lock()
+	defer tat.lock.Unlock()
 
 	epochid := b.Epoch
 	innerShardTxNum := len(b.InnerShardTxs)

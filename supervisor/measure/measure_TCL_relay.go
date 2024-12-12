@@ -4,6 +4,7 @@ import (
 	"blockEmulator/message"
 	"blockEmulator/params"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -28,6 +29,8 @@ type TestModule_TCL_Relay struct {
 	crossShardFunctionCallTxNum []int
 	innerSCTxNum                []int
 	txNum                       []float64 // record the txNumber in each epoch
+
+	lock sync.Mutex
 }
 
 func NewTestModule_TCL_Relay() *TestModule_TCL_Relay {
@@ -63,6 +66,9 @@ func (tml *TestModule_TCL_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 	if b.BlockBodyLength == 0 { // empty block
 		return
 	}
+
+	tml.lock.Lock()
+	defer tml.lock.Unlock()
 
 	epochid := b.Epoch
 	mTime := b.CommitTime

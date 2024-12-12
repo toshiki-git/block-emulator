@@ -5,6 +5,7 @@ import (
 	"blockEmulator/params"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -27,6 +28,8 @@ type TestModule_TCL_Broker struct {
 	txNum        []float64 // record the txNumber in each epoch
 
 	brokerTxMap map[string]time.Time // map: origin raw tx' hash to the time when the corresponding broker1 tx was added into the pool.
+
+	lock sync.Mutex
 }
 
 func NewTestModule_TCL_Broker() *TestModule_TCL_Broker {
@@ -58,6 +61,9 @@ func (tml *TestModule_TCL_Broker) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 	if b.BlockBodyLength == 0 { // empty block
 		return
 	}
+
+	tml.lock.Lock()
+	defer tml.lock.Unlock()
 
 	epochid := b.Epoch
 	mTime := b.CommitTime

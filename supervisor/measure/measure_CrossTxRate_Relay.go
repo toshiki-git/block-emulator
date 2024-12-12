@@ -4,6 +4,7 @@ import (
 	"blockEmulator/message"
 	"fmt"
 	"strconv"
+	"sync"
 )
 
 // to test cross-transaction rate
@@ -18,6 +19,8 @@ type TestCrossTxRate_Relay struct {
 
 	totTxNum      []float64
 	totCrossTxNum []float64
+
+	lock sync.Mutex
 }
 
 func NewTestCrossTxRate_Relay() *TestCrossTxRate_Relay {
@@ -42,6 +45,9 @@ func (tctr *TestCrossTxRate_Relay) UpdateMeasureRecord(b *message.BlockInfoMsg) 
 	if b.BlockBodyLength == 0 { // empty block
 		return
 	}
+
+	tctr.lock.Lock()
+	defer tctr.lock.Unlock()
 
 	epochid := b.Epoch
 	r1TxNum := len(b.Relay1Txs)
