@@ -33,7 +33,6 @@ type CLPACommitteeMod_Broker struct {
 	curEpoch            int32
 	clpaLock            sync.Mutex
 	clpaGraph           *partition.CLPAState
-	ClpaGraphHistory    []*partition.CLPAState
 	modifiedMap         map[string]uint64
 	clpaLastRunningTime time.Time
 	clpaFreq            int
@@ -55,7 +54,7 @@ type CLPACommitteeMod_Broker struct {
 
 func NewCLPACommitteeMod_Broker(Ip_nodeTable map[uint64]map[uint64]string, Ss *signal.StopSignal, sl *supervisor_log.SupervisorLog, csvFilePath string, dataNum, batchNum, clpaFrequency int) *CLPACommitteeMod_Broker {
 	cg := new(partition.CLPAState)
-	cg.Init_CLPAState(0.5, params.CLPAIterationNum, params.ShardNum)
+	cg.Init_CLPAState(0.5, 100, params.ShardNum)
 
 	broker := new(broker.Broker)
 	broker.NewBroker(nil)
@@ -66,7 +65,6 @@ func NewCLPACommitteeMod_Broker(Ip_nodeTable map[uint64]map[uint64]string, Ss *s
 		batchDataNum:        batchNum,
 		nowDataNum:          0,
 		clpaGraph:           cg,
-		ClpaGraphHistory:    make([]*partition.CLPAState, 0),
 		modifiedMap:         make(map[string]uint64),
 		clpaFreq:            clpaFrequency,
 		clpaLastRunningTime: time.Time{},
@@ -96,7 +94,6 @@ func (ccm *CLPACommitteeMod_Broker) HandleOtherMessage(msg []byte) {
 	ccm.txSending(itxs)
 }
 
-// get shard id by address
 func (ccm *CLPACommitteeMod_Broker) fetchModifiedMap(key string) uint64 {
 	if val, ok := ccm.modifiedMap[key]; !ok {
 		return uint64(utils.Addr2Shard(key))
@@ -141,7 +138,6 @@ func (ccm *CLPACommitteeMod_Broker) txSending(txlist []*core.Transaction) {
 		ccm.clpaLock.Unlock()
 		sendToShard[sendersid] = append(sendToShard[sendersid], tx)
 	}
-	ccm.sl.Slog.Println(len(txlist), "txs have been sent.")
 }
 
 func (ccm *CLPACommitteeMod_Broker) MsgSendingControl() {
@@ -251,22 +247,17 @@ func (ccm *CLPACommitteeMod_Broker) clpaMapSend(m map[string]uint64) {
 }
 
 func (ccm *CLPACommitteeMod_Broker) clpaReset() {
-	ccm.ClpaGraphHistory = append(ccm.ClpaGraphHistory, ccm.clpaGraph)
 	ccm.clpaGraph = new(partition.CLPAState)
-	ccm.clpaGraph.Init_CLPAState(0.5, params.CLPAIterationNum, params.ShardNum)
+	ccm.clpaGraph.Init_CLPAState(0.5, 100, params.ShardNum)
 	for key, val := range ccm.modifiedMap {
 		ccm.clpaGraph.PartitionMap[partition.Vertex{Addr: key}] = int(val)
 	}
 }
 
-// handle block information when received CBlockInfo message(pbft node commited)pbftノードがコミットしたとき
 func (ccm *CLPACommitteeMod_Broker) HandleBlockInfo(b *message.BlockInfoMsg) {
-	start := time.Now()
 	ccm.sl.Slog.Printf("received from shard %d in epoch %d.\n", b.SenderShardID, b.Epoch)
-	IsChangeEpoch := false
 	if atomic.CompareAndSwapInt32(&ccm.curEpoch, int32(b.Epoch-1), int32(b.Epoch)) {
 		ccm.sl.Slog.Println("this curEpoch is updated", b.Epoch)
-		IsChangeEpoch = true
 	}
 	if b.BlockBodyLength == 0 {
 		return
@@ -289,21 +280,6 @@ func (ccm *CLPACommitteeMod_Broker) HandleBlockInfo(b *message.BlockInfoMsg) {
 		ccm.clpaGraph.AddEdge(partition.Vertex{Addr: b1tx.OriginalSender}, partition.Vertex{Addr: b1tx.FinalRecipient})
 	}
 	ccm.clpaLock.Unlock()
-
-	duration := time.Since(start)
-	ccm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)
-
-	if IsChangeEpoch {
-		ccm.updateCLPAResult(b)
-	}
-}
-
-func (ccm *CLPACommitteeMod_Broker) updateCLPAResult(b *message.BlockInfoMsg) {
-	if b.CLPAResult == nil {
-		b.CLPAResult = &partition.CLPAState{} // 必要な構造体で初期化
-	}
-	ccm.sl.Slog.Println("Epochが変わったのでResultの集計")
-	b.CLPAResult = ccm.ClpaGraphHistory[b.Epoch-1]
 }
 
 func (ccm *CLPACommitteeMod_Broker) createConfirm(txs []*core.Transaction) {
@@ -337,16 +313,13 @@ func (ccm *CLPACommitteeMod_Broker) dealTxByBroker(txs []*core.Transaction) (itx
 		rSid := ccm.fetchModifiedMap(tx.Recipient)
 		sSid := ccm.fetchModifiedMap(tx.Sender)
 		ccm.clpaLock.Unlock()
-		//　どっちもブローカーじゃないし、受信者と送信者が違うシャード場合
 		if rSid != sSid && !ccm.broker.IsBroker(tx.Recipient) && !ccm.broker.IsBroker(tx.Sender) {
-			// Cross shard transaction. BrokerChain context
 			brokerRawMeg := &message.BrokerRawMeg{
 				Tx:     tx,
 				Broker: ccm.broker.BrokerAddress[0],
 			}
 			brokerRawMegs = append(brokerRawMegs, brokerRawMeg)
 		} else {
-			// Inner shard transaction. BrokerChain context
 			if ccm.broker.IsBroker(tx.Recipient) || ccm.broker.IsBroker(tx.Sender) {
 				tx.HasBroker = true
 				tx.SenderIsBroker = ccm.broker.IsBroker(tx.Sender)
@@ -415,7 +388,6 @@ func (ccm *CLPACommitteeMod_Broker) getBrokerRawMagDigest(r *message.BrokerRawMe
 	return hash[:]
 }
 
-// handle broker raw message(Cross shard transaction)
 func (ccm *CLPACommitteeMod_Broker) handleBrokerRawMag(brokerRawMags []*message.BrokerRawMeg) {
 	b := ccm.broker
 	brokerType1Mags := make([]*message.BrokerType1Meg, 0)
@@ -477,5 +449,3 @@ func (ccm *CLPACommitteeMod_Broker) handleTx2ConfirmMag(mag2confirms []*message.
 	ccm.brokerModuleLock.Unlock()
 	fmt.Println("finish ctx with adding tx1 and tx2 to txpool,len", num)
 }
-
-func (ccm *CLPACommitteeMod_Broker) HandleContractGraph(content []byte) {}

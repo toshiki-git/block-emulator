@@ -727,5 +727,3 @@ func (pbcm *ProposalBrokerCommitteeModule) handleTx2ConfirmMag(mag2confirms []*m
 	pbcm.brokerModuleLock.Unlock()
 	fmt.Println("finish ctx with adding tx1 and tx2 to txpool,len", num)
 }
-
-func (pbcm *ProposalBrokerCommitteeModule) HandleContractGraph(content []byte) {}

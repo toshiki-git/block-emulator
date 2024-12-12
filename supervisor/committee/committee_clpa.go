@@ -253,5 +253,3 @@ func (ccm *CLPACommitteeModule) updateCLPAResult(b *message.BlockInfoMsg) {
 	ccm.sl.Slog.Println("Epochが変わったのでResultの集計")
 	b.CLPAResult = ccm.ClpaGraphHistory[b.Epoch-1]
 }
-
-func (ccm *CLPACommitteeModule) HandleContractGraph(content []byte) {}
