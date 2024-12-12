@@ -87,7 +87,7 @@ func (prom *ProposalRelayOutsideModule) handlePartitionMsg(content []byte) {
 	// TODO: ここで、MergedContractを受け取りたい
 	prom.cdm.MergedContracts = append(prom.cdm.MergedContracts, pm.MergedContracts)
 	prom.cdm.ReversedMergedContracts = append(prom.cdm.ReversedMergedContracts, ReverseMap(pm.MergedContracts))
-	prom.pbftNode.pl.Plog.Printf("%d個のMergedContractsを受け取りました。 \n", len(pm.MergedContracts))
+	prom.pbftNode.pl.Plog.Printf("%d 個のMergedContractsを受け取りました。 \n", len(pm.MergedContracts))
 	prom.pbftNode.pl.Plog.Printf("S%dN%d : has received partition message\n", prom.pbftNode.ShardID, prom.pbftNode.NodeID)
 	prom.cdm.PartitionOn = true
 }
@@ -112,22 +112,23 @@ func (prom *ProposalRelayOutsideModule) handlePartitionReady(content []byte) {
 
 // when the message from other shard arriving, it should be added into the message pool
 func (prom *ProposalRelayOutsideModule) handleAccountStateAndTxMsg(content []byte) {
-	// マップへの書き込みを排他制御
-	prom.cdm.CollectLock.Lock()
-	defer prom.cdm.CollectLock.Unlock()
-
 	at := new(message.AccountStateAndTx)
 	err := json.Unmarshal(content, at)
 	if err != nil {
 		log.Panic(err) // エラーの詳細を出力
 	}
 
+	prom.cdm.AccountStateTxLock.Lock()
 	prom.cdm.AccountStateTx[at.FromShard] = at
+	prom.cdm.AccountStateTxLock.Unlock()
+
 	prom.pbftNode.pl.Plog.Printf("S%dN%d has added the accoutStateandTx from %d to pool\n", prom.pbftNode.ShardID, prom.pbftNode.NodeID, at.FromShard)
 
 	// 全シャード分のデータが揃った場合の処理
 	if len(prom.cdm.AccountStateTx) == int(prom.pbftNode.pbftChainConfig.ShardNums)-1 {
+		prom.cdm.CollectLock.Lock()
 		prom.cdm.CollectOver = true
+		prom.cdm.CollectLock.Unlock()
 		prom.pbftNode.pl.Plog.Printf("S%dN%d has added all accoutStateandTx~~~\n", prom.pbftNode.ShardID, prom.pbftNode.NodeID)
 	}
 }
@@ -508,19 +509,6 @@ func (prom *ProposalRelayOutsideModule) processBatchResponses(responses []*messa
 	prom.sendRequests(requestsByShard)
 	prom.sendResponses(responseByShard)
 	prom.sendInjectTransactions(injectTxByShard)
-
-	/* if len(contractTxlist) > 0 {
-		cg := message.ContractGraph{
-			Txs:       contractTxlist,
-			ToShardID: prom.pbftNode.ShardID,
-		}
-		itByte, err := json.Marshal(cg)
-		if err != nil {
-			log.Panic(err)
-		}
-		sendMsg := message.MergeMessage(message.CContractGraph, itByte)
-		go networks.TcpDial(sendMsg, prom.pbftNode.ip_nodeTable[params.SupervisorShard][0])
-	} */
 }
 
 // 共通関数: リクエストの送信

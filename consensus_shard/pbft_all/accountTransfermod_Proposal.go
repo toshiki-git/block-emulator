@@ -292,7 +292,7 @@ func (cphm *ProposalPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 			log.Panic()
 		}
 		send_msg := message.MergeMessage(message.AccountState_and_TX, aByte)
-		networks.TcpDial(send_msg, cphm.pbftNode.ip_nodeTable[destShardID][0])
+		go networks.TcpDial(send_msg, cphm.pbftNode.ip_nodeTable[destShardID][0])
 		cphm.pbftNode.pl.Plog.Printf("The message to shard %d is sent\n", destShardID)
 	}
 	cphm.pbftNode.pl.Plog.Println("sendAccounts_and_Txs():after sending, The size of tx pool is: ", len(cphm.pbftNode.CurChain.Txpool.TxQueue))

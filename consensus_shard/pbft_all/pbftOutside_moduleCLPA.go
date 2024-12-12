@@ -126,7 +126,11 @@ func (crom *CLPARelayOutsideModule) handleAccountStateAndTxMsg(content []byte) {
 	if err != nil {
 		log.Panic()
 	}
+
+	crom.cdm.AccountStateTxLock.Lock()
 	crom.cdm.AccountStateTx[at.FromShard] = at
+	crom.cdm.AccountStateTxLock.Unlock()
+
 	crom.pbftNode.pl.Plog.Printf("S%dN%d has added the accoutStateandTx from %d to pool\n", crom.pbftNode.ShardID, crom.pbftNode.NodeID, at.FromShard)
 
 	if len(crom.cdm.AccountStateTx) == int(crom.pbftNode.pbftChainConfig.ShardNums)-1 {

@@ -38,7 +38,7 @@ func (pm *CrossFunctionCallPoolManager) HandleContractRequest(content []byte) {
 
 	pm.AddRequests(requests)
 
-	fmt.Printf("handleContractRequest: %d 件のリクエストをPoolに追加しました。\n", len(requests))
+	// fmt.Printf("handleContractRequest: %d 件のリクエストをPoolに追加しました。\n", len(requests))
 }
 
 func (pm *CrossFunctionCallPoolManager) HandleContractResponse(content []byte) {

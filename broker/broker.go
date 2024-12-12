@@ -48,5 +48,9 @@ func (b *Broker) initBrokerAddr(num int) []string {
 		}
 	}
 	readFile.Close()
+	fmt.Println("brokerAddressを出力します", len(brokerAddress))
+	for _, brokerAddr := range brokerAddress {
+		fmt.Println("brokerAddr: ", brokerAddr)
+	}
 	return brokerAddress
 }

@@ -180,8 +180,6 @@ func (d *Supervisor) handleMessage(msg []byte) {
 	case message.CBlockInfo:
 		d.handleBlockInfos(content)
 		// add codes for more functionality
-	case message.CContractGraph:
-		d.comMod.HandleContractGraph(content)
 	default:
 		d.comMod.HandleOtherMessage(msg)
 		for _, mm := range d.testMeasureMods {
@@ -197,9 +195,9 @@ func (d *Supervisor) handleClientRequest(con net.Conn) {
 		clientRequest, err := clientReader.ReadBytes('\n')
 		switch err {
 		case nil:
-			d.tcpLock.Lock()
+			// d.tcpLock.Lock()
 			d.handleMessage(clientRequest)
-			d.tcpLock.Unlock()
+			// d.tcpLock.Unlock()
 		case io.EOF:
 			log.Println("client closed the connection by terminating the process")
 			return

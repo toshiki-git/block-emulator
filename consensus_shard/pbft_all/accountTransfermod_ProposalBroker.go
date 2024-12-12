@@ -33,7 +33,7 @@ func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) sendPartitionReady() {
 	send_msg := message.MergeMessage(message.CPartitionReady, pByte)
 	for sid := 0; sid < int(pbhm.pbftNode.pbftChainConfig.ShardNums); sid++ {
 		if sid != int(pr.FromShard) {
-			networks.TcpDial(send_msg, pbhm.pbftNode.ip_nodeTable[uint64(sid)][0])
+			go networks.TcpDial(send_msg, pbhm.pbftNode.ip_nodeTable[uint64(sid)][0])
 		}
 	}
 	pbhm.pbftNode.pl.Plog.Print("Ready for partition\n")
@@ -311,7 +311,7 @@ func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 			log.Panic()
 		}
 		send_msg := message.MergeMessage(message.CAccountTransferMsg_broker, aByte)
-		networks.TcpDial(send_msg, pbhm.pbftNode.ip_nodeTable[destShardID][0])
+		go networks.TcpDial(send_msg, pbhm.pbftNode.ip_nodeTable[destShardID][0])
 		pbhm.pbftNode.pl.Plog.Printf("The message to shard %d is sent\n", destShardID)
 	}
 	pbhm.pbftNode.pl.Plog.Println("sendAccounts_and_Txs():after sending, The size of tx pool is: ", len(pbhm.pbftNode.CurChain.Txpool.TxQueue))
@@ -327,7 +327,7 @@ func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) sendAccounts_and_Txs() {
 		log.Panic()
 	}
 	send_msg := message.MergeMessage(message.CInner2CrossTx, icByte)
-	networks.TcpDial(send_msg, pbhm.pbftNode.ip_nodeTable[params.SupervisorShard][0])
+	go networks.TcpDial(send_msg, pbhm.pbftNode.ip_nodeTable[params.SupervisorShard][0])
 }
 
 // fetch collect infos

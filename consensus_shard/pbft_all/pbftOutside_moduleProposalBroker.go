@@ -85,7 +85,7 @@ func (pbom *ProposalBrokerOutsideModule) handlePartitionMsg(content []byte) {
 	// TODO: ここで、MergedContractを受け取りたい
 	pbom.cdm.MergedContracts = append(pbom.cdm.MergedContracts, pm.MergedContracts)
 	pbom.cdm.ReversedMergedContracts = append(pbom.cdm.ReversedMergedContracts, ReverseMap(pm.MergedContracts))
-	pbom.pbftNode.pl.Plog.Printf("%d個のMergedContractsを受け取りました。 \n", len(pm.MergedContracts))
+	pbom.pbftNode.pl.Plog.Printf("%d 個のMergedContractsを受け取りました。 \n", len(pm.MergedContracts))
 	pbom.pbftNode.pl.Plog.Printf("S%dN%d : 次のProposeはPartitionブロックが生成されます\n", pbom.pbftNode.ShardID, pbom.pbftNode.NodeID)
 	pbom.cdm.PartitionOn = true
 }
@@ -105,26 +105,27 @@ func (pbom *ProposalBrokerOutsideModule) handlePartitionReady(content []byte) {
 	pbom.cdm.ReadySeq[pr.FromShard] = pr.NowSeqID
 	pbom.pbftNode.seqMapLock.Unlock()
 
-	pbom.pbftNode.pl.Plog.Printf("ready message from shard %d, seqid is %d\n", pr.FromShard, pr.NowSeqID)
+	pbom.pbftNode.pl.Plog.Printf("シャード %d のPartition準備は完了しました, seqid is %d\n", pr.FromShard, pr.NowSeqID)
 }
 
 // when the message from other shard arriving, it should be added into the message pool
 func (pbom *ProposalBrokerOutsideModule) handleAccountStateAndTxMsg(content []byte) {
-	// マップへの書き込みを排他制御
-	pbom.cdm.CollectLock.Lock()
-	defer pbom.cdm.CollectLock.Unlock()
-
 	at := new(message.AccountStateAndTx)
 	err := json.Unmarshal(content, at)
 	if err != nil {
 		log.Panic()
 	}
 
+	pbom.cdm.AccountStateTxLock.Lock()
 	pbom.cdm.AccountStateTx[at.FromShard] = at
+	pbom.cdm.AccountStateTxLock.Unlock()
+
 	pbom.pbftNode.pl.Plog.Printf("S%dN%d has added the accoutStateandTx from %d to pool\n", pbom.pbftNode.ShardID, pbom.pbftNode.NodeID, at.FromShard)
 
 	if len(pbom.cdm.AccountStateTx) == int(pbom.pbftNode.pbftChainConfig.ShardNums)-1 {
+		pbom.cdm.CollectLock.Lock()
 		pbom.cdm.CollectOver = true
+		pbom.cdm.CollectLock.Unlock()
 		pbom.pbftNode.pl.Plog.Printf("S%dN%d has added all accoutStateandTx~~~\n", pbom.pbftNode.ShardID, pbom.pbftNode.NodeID)
 	}
 }
@@ -505,19 +506,6 @@ func (pbom *ProposalBrokerOutsideModule) processBatchResponses(responses []*mess
 	pbom.sendRequests(requestsByShard)
 	pbom.sendResponses(responseByShard)
 	pbom.sendInjectTransactions(injectTxByShard)
-
-	/* if len(contractTxlist) > 0 {
-		cg := message.ContractGraph{
-			Txs:       contractTxlist,
-			ToShardID: pbom.pbftNode.ShardID,
-		}
-		itByte, err := json.Marshal(cg)
-		if err != nil {
-			log.Panic(err)
-		}
-		sendMsg := message.MergeMessage(message.CContractGraph, itByte)
-		go networks.TcpDial(sendMsg, pbom.pbftNode.ip_nodeTable[params.SupervisorShard][0])
-	} */
 }
 
 // 共通関数: リクエストの送信

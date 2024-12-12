@@ -8,12 +8,15 @@ import (
 )
 
 type Data_supportCLPA struct {
-	ModifiedMap             []map[string]uint64                   // record the modified map from the decider(s)
-	AccountTransferRound    uint64                                // denote how many times accountTransfer do
-	ReceivedNewAccountState map[string]*core.AccountState         // the new accountState From other Shards
-	ReceivedNewTx           []*core.Transaction                   // new transactions from other shards' pool
-	AccountStateTx          map[uint64]*message.AccountStateAndTx // the map of accountState and transactions, pool
-	PartitionOn             bool                                  // judge nextEpoch is partition or not
+	ModifiedMap             []map[string]uint64           // record the modified map from the decider(s)
+	AccountTransferRound    uint64                        // denote how many times accountTransfer do
+	ReceivedNewAccountState map[string]*core.AccountState // the new accountState From other Shards
+	ReceivedNewTx           []*core.Transaction           // new transactions from other shards' pool
+
+	AccountStateTx     map[uint64]*message.AccountStateAndTx // the map of accountState and transactions, pool
+	AccountStateTxLock sync.Mutex                            // lock for accountStateTx
+
+	PartitionOn bool // judge nextEpoch is partition or not
 
 	PartitionReady map[uint64]bool // judge whether all shards has done all txs
 	P_ReadyLock    sync.Mutex      // lock for ready

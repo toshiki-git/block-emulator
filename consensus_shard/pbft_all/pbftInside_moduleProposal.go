@@ -27,7 +27,14 @@ func (pphm *ProposalPbftInsideExtraHandleMod) HandleinPropose() (bool, *message.
 		pphm.pbftNode.pl.Plog.Println("パーティションブロックのProposeを行います。")
 		pphm.sendPartitionReady() // Leader to Other Shard Leaders
 		for !pphm.getPartitionReady() {
-			pphm.pbftNode.pl.Plog.Println("各シャードのPartitionReadyがすべてtrueになるまでgetPartitionReady()で待機します。")
+			unReadyShard := make([]uint64, 0)
+			for k := 0; k < params.ShardNum; k++ {
+				_, exists := pphm.cdm.PartitionReady[uint64(k)]
+				if !exists {
+					unReadyShard = append(unReadyShard, uint64(k))
+				}
+			}
+			pphm.pbftNode.pl.Plog.Printf("待機中: PartitionReadyが未完了のシャード: %v", unReadyShard)
 			time.Sleep(time.Second)
 		}
 		pphm.pbftNode.pl.Plog.Println("各シャードのPartitionReadyがすべてtrueになりました。")

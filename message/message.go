@@ -31,7 +31,6 @@ const (
 	CContractInject  MessageType = "contractInject"
 	CContractRequest MessageType = "contractRequest"
 	CContactResponse MessageType = "contractResponse"
-	CContractGraph   MessageType = "contractGraph"
 )
 
 var (

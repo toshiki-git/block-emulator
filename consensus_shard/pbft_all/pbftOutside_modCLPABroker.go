@@ -95,7 +95,11 @@ func (cbom *CLPABrokerOutsideModule) handleAccountStateAndTxMsg(content []byte) 
 	if err != nil {
 		log.Panic()
 	}
+
+	cbom.cdm.AccountStateTxLock.Lock()
 	cbom.cdm.AccountStateTx[at.FromShard] = at
+	cbom.cdm.AccountStateTxLock.Unlock()
+
 	cbom.pbftNode.pl.Plog.Printf("S%dN%d has added the accoutStateandTx from %d to pool\n", cbom.pbftNode.ShardID, cbom.pbftNode.NodeID, at.FromShard)
 
 	if len(cbom.cdm.AccountStateTx) == int(cbom.pbftNode.pbftChainConfig.ShardNums)-1 {

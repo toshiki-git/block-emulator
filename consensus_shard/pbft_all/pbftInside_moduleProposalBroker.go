@@ -27,7 +27,14 @@ func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) HandleinPropose() (bool, *me
 		pbhm.pbftNode.pl.Plog.Println("パーティションブロックのProposeを行います。")
 		pbhm.sendPartitionReady() // Leader to Other Shard Leaders
 		for !pbhm.getPartitionReady() {
-			pbhm.pbftNode.pl.Plog.Println("各シャードのPartitionReadyがすべてtrueになるまでgetPartitionReady()で待機します。")
+			unReadyShard := make([]uint64, 0)
+			for k := 0; k < params.ShardNum; k++ {
+				_, exists := pbhm.cdm.PartitionReady[uint64(k)]
+				if !exists {
+					unReadyShard = append(unReadyShard, uint64(k))
+				}
+			}
+			pbhm.pbftNode.pl.Plog.Printf("待機中: PartitionReadyが未完了のシャード: %v", unReadyShard)
 			time.Sleep(time.Second)
 		}
 		pbhm.pbftNode.pl.Plog.Println("各シャードのPartitionReadyがすべてtrueになりました。")
@@ -188,7 +195,7 @@ func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) HandleinCommit(cmsg *message
 
 		// send seqID
 		// TODO: これが必要かどうか検討　relayのpphm.pbftNode.RelayMsgSend()これに対応するもの
-		for sid := uint64(0); sid < pbhm.pbftNode.pbftChainConfig.ShardNums; sid++ {
+		/* for sid := uint64(0); sid < pbhm.pbftNode.pbftChainConfig.ShardNums; sid++ {
 			if sid == pbhm.pbftNode.ShardID {
 				continue
 			}
@@ -203,7 +210,7 @@ func (pbhm *ProposalBrokerPbftInsideExtraHandleMod) HandleinCommit(cmsg *message
 			msg_send := message.MergeMessage(message.CSeqIDinfo, sByte)
 			go networks.TcpDial(msg_send, pbhm.pbftNode.ip_nodeTable[sid][0])
 			pbhm.pbftNode.pl.Plog.Printf("S%dN%d : sended sequence ids to %d\n", pbhm.pbftNode.ShardID, pbhm.pbftNode.NodeID, sid)
-		}
+		} */
 		// send txs excuted in this block to the listener
 		// add more message to measure more metrics
 		bim := message.BlockInfoMsg{
