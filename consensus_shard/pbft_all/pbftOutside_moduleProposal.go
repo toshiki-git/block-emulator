@@ -561,7 +561,6 @@ func (prom *ProposalRelayOutsideModule) sendInjectTransactions(sendToShard map[u
 		sendMsg := message.MergeMessage(message.CInject, itByte)
 		// リーダーノードに送信
 		go networks.TcpDial(sendMsg, prom.pbftNode.ip_nodeTable[sid][0])
-		// prom.pbftNode.pl.Plog.Printf("Shard %d に %d 件の Inject トランザクションを送信しました。\n", sid, len(txs))
 	}
 }
 

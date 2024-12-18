@@ -50,7 +50,7 @@ func (pm *CrossFunctionCallPoolManager) HandleContractResponse(content []byte) {
 
 	pm.AddResponses(responses)
 
-	fmt.Printf("HandleContractResponse: %d 件のレスポンスをPoolに追加しました。\n", len(responses))
+	// fmt.Printf("HandleContractResponse: %d 件のレスポンスをPoolに追加しました。\n", len(responses))
 }
 
 // Poolにデータを追加する関数

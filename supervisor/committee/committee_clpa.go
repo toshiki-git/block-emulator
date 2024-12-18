@@ -243,7 +243,9 @@ func (ccm *CLPACommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	ccm.clpaLock.Unlock()
 
 	duration := time.Since(start)
-	ccm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)
+	if duration > 3*time.Second {
+		ccm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)
+	}
 }
 
 func (ccm *CLPACommitteeModule) updateCLPAResult(b *message.BlockInfoMsg) {

@@ -266,6 +266,7 @@ func (pcm *ProposalCommitteeModule) MsgSendingControl() {
 			}
 
 			pcm.sl.Slog.Printf("Current Skiped txs: %d\n", skipTxCnt)
+			pcm.sl.Slog.Printf("読み込まれた txs: %d\n", pcm.nowDataNum)
 			pcm.txSending(txlist)
 
 			// reset the variants about tx sending
@@ -442,8 +443,9 @@ func (pcm *ProposalCommitteeModule) HandleBlockInfo(b *message.BlockInfoMsg) {
 	pcm.processTransactions(b.InnerSCTxs)
 
 	duration := time.Since(start)
-	pcm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)
-
+	if duration > 1*time.Second {
+		pcm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)
+	}
 }
 
 func (pcm *ProposalCommitteeModule) updateCLPAResult(b *message.BlockInfoMsg) {

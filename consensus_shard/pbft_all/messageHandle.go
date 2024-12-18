@@ -27,6 +27,11 @@ func (p *PbftConsensusNode) Propose() {
 				p.pl.Plog.Println("pbftStage=1でないので1秒待機します。nextRoundBeginSignal <- trueになるまで待機します")
 				time.Sleep(time.Millisecond * 1000)
 			}
+			for p.IsStartCLPA {
+				p.pl.Plog.Println("CLPAが開始したので、ブロックの生成はストップします。")
+				time.Sleep(time.Millisecond * 1000)
+			}
+
 			nextRoundBeginSignal <- true
 		}
 	}()

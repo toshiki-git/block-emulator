@@ -188,7 +188,6 @@ func (pbcm *ProposalBrokerCommitteeModule) sendInjectTransactions(sendToShard ma
 		sendMsg := message.MergeMessage(message.CInject, itByte)
 		// リーダーノードに送信
 		go networks.TcpDial(sendMsg, pbcm.IpNodeTable[sid][0])
-		pbcm.sl.Slog.Printf("Shard %d に %d 件の Inject トランザクションを送信しました。\n", sid, len(txs))
 	}
 }
 
@@ -206,7 +205,6 @@ func (pbcm *ProposalBrokerCommitteeModule) sendContractInjectTransactions(contra
 		sendMsg := message.MergeMessage(message.CContractInject, citByte)
 		// リーダーノードに送信
 		go networks.TcpDial(sendMsg, pbcm.IpNodeTable[sid][0])
-		pbcm.sl.Slog.Printf("Shard %d に %d 件の ContractInject トランザクションを送信しました。\n", sid, len(txs))
 	}
 }
 
@@ -299,6 +297,7 @@ func (pbcm *ProposalBrokerCommitteeModule) MsgSendingControl() {
 			}
 
 			pbcm.sl.Slog.Printf("Current Skiped txs: %d\n", skipTxCnt)
+			pbcm.sl.Slog.Printf("読み込まれた txs: %d\n", pbcm.nowDataNum)
 			innerTxs := pbcm.dealTxByBroker(txlist) // ctxのSendingが行われる
 
 			pbcm.txSending(innerTxs)
@@ -312,6 +311,16 @@ func (pbcm *ProposalBrokerCommitteeModule) MsgSendingControl() {
 			pbcm.clpaLock.Lock()
 			clpaCnt++
 
+			emptyData := []byte{}
+			if err != nil {
+				log.Panic()
+			}
+			startCLPA_msg := message.MergeMessage(message.StartCLPA, emptyData)
+			// send to worker shards
+			for i := uint64(0); i < uint64(params.ShardNum); i++ {
+				go networks.TcpDial(startCLPA_msg, pbcm.IpNodeTable[i][0])
+			}
+
 			pbcm.sl.Slog.Println("CLPAを開始します。")
 			start := time.Now()
 
@@ -320,6 +329,7 @@ func (pbcm *ProposalBrokerCommitteeModule) MsgSendingControl() {
 			}
 
 			mmap, _ := pbcm.ClpaGraph.CLPA_Partition() // mmapはPartitionMapとは違って、移動するもののみを含む
+			executionTime := pbcm.ClpaGraph.ExecutionTime
 
 			// マージされたコントラクトのマップがResetされないように. 更新してからclpaMapSendする
 			pbcm.MergedContracts = pbcm.ClpaGraph.UnionFind.GetParentMap()
@@ -341,8 +351,7 @@ func (pbcm *ProposalBrokerCommitteeModule) MsgSendingControl() {
 
 			pbcm.clpaLastRunningTime = time.Now()
 			pbcm.sl.Slog.Println("Next CLPA epoch begins. ")
-			duration := time.Since(start)
-			pbcm.sl.Slog.Printf("CLPAの全体の実行時間は %v.\n", duration)
+			pbcm.sl.Slog.Printf("CLPAの全体の実行時間: %v, アルゴリズム: %v, その他: %v\n", time.Since(start), executionTime, time.Since(start)-executionTime)
 		}
 
 		if pbcm.nowDataNum == pbcm.dataTotalNum {
@@ -359,6 +368,16 @@ func (pbcm *ProposalBrokerCommitteeModule) MsgSendingControl() {
 			pbcm.clpaLock.Lock()
 			clpaCnt++
 
+			emptyData := []byte{}
+			if err != nil {
+				log.Panic()
+			}
+			startCLPA_msg := message.MergeMessage(message.StartCLPA, emptyData)
+			// send to worker shards
+			for i := uint64(0); i < uint64(params.ShardNum); i++ {
+				go networks.TcpDial(startCLPA_msg, pbcm.IpNodeTable[i][0])
+			}
+
 			pbcm.sl.Slog.Println("CLPAを開始します。")
 			start := time.Now()
 
@@ -373,6 +392,7 @@ func (pbcm *ProposalBrokerCommitteeModule) MsgSendingControl() {
 			}
 
 			mmap, _ := pbcm.ClpaGraph.CLPA_Partition() // mmapはPartitionMapとは違って、移動するもののみを含む
+			executionTime := pbcm.ClpaGraph.ExecutionTime
 
 			// マージされたコントラクトのマップがResetされないように
 			pbcm.MergedContracts = pbcm.ClpaGraph.UnionFind.GetParentMap()
@@ -392,11 +412,11 @@ func (pbcm *ProposalBrokerCommitteeModule) MsgSendingControl() {
 				time.Sleep(time.Second)
 			}
 			pbcm.sl.Slog.Println("Next CLPA epoch begins. ")
-			duration := time.Since(start)
-			pbcm.sl.Slog.Printf("CLPAの全体の実行時間は %v.\n", duration)
+			pbcm.sl.Slog.Printf("CLPAの全体の実行時間: %v, アルゴリズム: %v, その他: %v\n", time.Since(start), executionTime, time.Since(start)-executionTime)
 			pbcm.clpaLastRunningTime = time.Now()
 		}
 	}
+	pbcm.sl.Slog.Printf("clpaの実行累計: %d", len(pbcm.IsCLPAExecuted))
 }
 
 func (pbcm *ProposalBrokerCommitteeModule) clpaMapSend(m map[string]uint64) {
@@ -449,7 +469,7 @@ func (pbcm *ProposalBrokerCommitteeModule) HandleBlockInfo(b *message.BlockInfoM
 	start := time.Now()
 	pbcm.sl.Slog.Printf("received from shard %d in epoch %d.\n", b.SenderShardID, b.Epoch)
 	IsChangeEpoch := false
-	pbcm.sl.Slog.Printf("clpaの実行累計: %d", len(pbcm.IsCLPAExecuted))
+
 	if atomic.CompareAndSwapInt32(&pbcm.curEpoch, int32(b.Epoch-1), int32(b.Epoch)) {
 		pbcm.sl.Slog.Println("this curEpoch is updated", b.Epoch)
 		IsChangeEpoch = true
@@ -468,27 +488,30 @@ func (pbcm *ProposalBrokerCommitteeModule) HandleBlockInfo(b *message.BlockInfoM
 	txs := make([]*core.Transaction, 0)
 	txs = append(txs, b.Broker1Txs...)
 	txs = append(txs, b.Broker2Txs...)
-	pbcm.createConfirm(txs)
+	go pbcm.createConfirm(txs)
 
+	waitLockTime := time.Now()
 	pbcm.clpaLock.Lock()
 	defer pbcm.clpaLock.Unlock()
-	/* 	for _, tx := range b.InnerShardTxs {
-	   		if tx.HasBroker {
-	   			continue
-	   		}
-	   		pbcm.ClpaGraph.AddEdge(partition.Vertex{Addr: tx.Sender}, partition.Vertex{Addr: tx.Recipient})
-	   	}
-	   	for _, b1tx := range b.Broker1Txs {
-	   		pbcm.ClpaGraph.AddEdge(partition.Vertex{Addr: b1tx.OriginalSender}, partition.Vertex{Addr: b1tx.FinalRecipient})
-	   	} */
 
+	if time.Since(waitLockTime) > 1*time.Second {
+		pbcm.sl.Slog.Printf("clpaLockの待機時間は %v.\n", time.Since(waitLockTime))
+	}
+
+	graphTime := time.Now()
 	pbcm.processTransactions(b.InnerShardTxs)
 	pbcm.processTransactions(b.Broker1Txs)
 	pbcm.processTransactions(b.CrossShardFunctionCall)
 	pbcm.processTransactions(b.InnerSCTxs)
 
+	if time.Since(graphTime) > 1*time.Second {
+		pbcm.sl.Slog.Printf("グラフの処理時間は %v.\n", time.Since(graphTime))
+	}
+
 	duration := time.Since(start)
-	pbcm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)
+	if duration > 1*time.Second {
+		pbcm.sl.Slog.Printf("シャード %d のBlockInfoMsg()の実行時間は %v.\n", b.SenderShardID, duration)
+	}
 }
 
 func (pbcm *ProposalBrokerCommitteeModule) updateCLPAResult(b *message.BlockInfoMsg) {
@@ -506,11 +529,6 @@ func (pbcm *ProposalBrokerCommitteeModule) processTransactions(txs []*core.Trans
 			pbcm.IsCLPAExecuted[string(tx.TxHash)] = true
 		} else {
 			skipCount++
-			continue
-		}
-
-		// TODO: b.InnerShardTxs の時ちょっと処理が違う
-		if tx.HasBroker {
 			continue
 		}
 

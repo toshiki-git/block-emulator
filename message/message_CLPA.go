@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	StartCLPA           MessageType = "StartCLPA"
 	AccountState_and_TX MessageType = "AccountState&txs"
 	PartitionReq        RequestType = "PartitionReq"
 	CPartitionMsg       MessageType = "PartitionModifiedMap"

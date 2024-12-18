@@ -81,6 +81,8 @@ type PbftConsensusNode struct {
 
 	// to handle the message outside of pbft
 	ohm OpInterShards
+
+	IsStartCLPA bool
 }
 
 // generate a pbft consensus for a node

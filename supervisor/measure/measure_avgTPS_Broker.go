@@ -125,7 +125,7 @@ func (tat *TestModule_avgTPS_Broker) OutputRecord() (perEpochTPS []float64, tota
 
 	totalTxNum += float64(tat.scTxInfo.GetTotalSCTxNum())
 	fmt.Printf("earliestTime: %v, latestTime: %v, diff: %v\n", eTime, lTime, lTime.Sub(eTime))
-	fmt.Printf("totalTPS = txnum(%f) / time(%f)\n", totalTxNum, lTime.Sub(eTime).Seconds())
+	fmt.Printf("totalTPS = txnum(%f) / time(%f) = %f\n", totalTxNum, lTime.Sub(eTime).Seconds(), totalTxNum/lTime.Sub(eTime).Seconds())
 
 	totalTPS = totalTxNum / (lTime.Sub(eTime).Seconds())
 

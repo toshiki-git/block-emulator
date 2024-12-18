@@ -29,6 +29,8 @@ func (pbom *ProposalBrokerOutsideModule) HandleMessageOutsidePBFT(msgType messag
 		pbom.handleInjectTx(content)
 
 	// messages about CLPA
+	case message.StartCLPA:
+		pbom.handleStartCLPA()
 	case message.CPartitionMsg:
 		pbom.handlePartitionMsg(content)
 	case message.CAccountTransferMsg_broker:
@@ -73,6 +75,11 @@ func (pbom *ProposalBrokerOutsideModule) handleInjectTx(content []byte) {
 	pbom.pbftNode.pl.Plog.Printf("S%dN%d : has handled injected txs msg, txs: %d \n", pbom.pbftNode.ShardID, pbom.pbftNode.NodeID, len(it.Txs))
 }
 
+func (pbom *ProposalBrokerOutsideModule) handleStartCLPA() {
+	fmt.Println("handleStartCLPAを受け取りました")
+	pbom.pbftNode.IsStartCLPA = true
+}
+
 // the leader received the partition message from listener/decider,
 // it init the local variant and send the accout message to other leaders.
 func (pbom *ProposalBrokerOutsideModule) handlePartitionMsg(content []byte) {
@@ -87,6 +94,7 @@ func (pbom *ProposalBrokerOutsideModule) handlePartitionMsg(content []byte) {
 	pbom.cdm.ReversedMergedContracts = append(pbom.cdm.ReversedMergedContracts, ReverseMap(pm.MergedContracts))
 	pbom.pbftNode.pl.Plog.Printf("%d 個のMergedContractsを受け取りました。 \n", len(pm.MergedContracts))
 	pbom.pbftNode.pl.Plog.Printf("S%dN%d : 次のProposeはPartitionブロックが生成されます\n", pbom.pbftNode.ShardID, pbom.pbftNode.NodeID)
+	pbom.pbftNode.IsStartCLPA = false
 	pbom.cdm.PartitionOn = true
 }
 
@@ -558,7 +566,6 @@ func (pbom *ProposalBrokerOutsideModule) sendInjectTransactions(sendToShard map[
 		sendMsg := message.MergeMessage(message.CInject, itByte)
 		// リーダーノードに送信
 		go networks.TcpDial(sendMsg, pbom.pbftNode.ip_nodeTable[sid][0])
-		// pbom.pbftNode.pl.Plog.Printf("Shard %d に %d 件の Inject トランザクションを送信しました。\n", sid, len(txs))
 	}
 }
 

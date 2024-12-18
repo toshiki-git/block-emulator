@@ -56,8 +56,8 @@ func (tg *TestModule_CLPA) UpdateMeasureRecord(b *message.BlockInfoMsg) {
 	tg.totalVertexNum = append(tg.totalVertexNum, len(b.CLPAResult.PartitionMap))
 	tg.crossShardEdgeNum = append(tg.crossShardEdgeNum, b.CLPAResult.CrossShardEdgeNum)
 	tg.edges2Shard = append(tg.edges2Shard, b.CLPAResult.Edges2Shard)
-	tg.mergedVertexNum = append(tg.mergedVertexNum, uniqueValueCount(b.CLPAResult.UnionFind.GetParentMap()))
-	tg.mergedContractNum = append(tg.mergedContractNum, len(b.CLPAResult.UnionFind.GetParentMap()))
+	//tg.mergedVertexNum = append(tg.mergedVertexNum, uniqueValueCount(b.CLPAResult.UnionFind.GetParentMap()))
+	//tg.mergedContractNum = append(tg.mergedContractNum, len(b.CLPAResult.UnionFind.GetParentMap()))
 	tg.executionTime = append(tg.executionTime, b.CLPAResult.ExecutionTime)
 }
 
@@ -95,8 +95,8 @@ func (tg *TestModule_CLPA) writeToCSV() {
 		"vertexNum",
 		"totalVertexNum",
 		"edges2Shard",
-		"mergedVertexNum",
-		"mergedContractNum",
+		// "mergedVertexNum",
+		// "mergedContractNum",
 		"executionTime",
 	}
 
@@ -110,8 +110,8 @@ func (tg *TestModule_CLPA) writeToCSV() {
 			strconv.Itoa(tg.vertexNum[i]),
 			strconv.Itoa(tg.totalVertexNum[i]),
 			fmt.Sprint(tg.edges2Shard[i]),
-			strconv.Itoa(tg.mergedVertexNum[i]),
-			strconv.Itoa(tg.mergedContractNum[i]),
+			// strconv.Itoa(tg.mergedVertexNum[i]),
+			// strconv.Itoa(tg.mergedContractNum[i]),
 			tg.executionTime[i].String(),
 		}
 		measureVals = append(measureVals, csvLine)
