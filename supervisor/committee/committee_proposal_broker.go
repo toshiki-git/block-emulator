@@ -250,7 +250,7 @@ func (pbcm *ProposalBrokerCommitteeModule) data2txWithContract(data []string, no
 		}
 
 		if len(tx.InternalTxs) > params.SkipThresholdInternalTx {
-			// pcm.sl.Slog.Printf("Internal TXが多すぎます。txHash: %s, InternalTxs: %d\n", txHash, len(tx.InternalTxs))
+			pbcm.sl.Slog.Printf("Internal TXが多すぎます。txHash: %s, InternalTxs: %d\n", txHash, len(tx.InternalTxs))
 			if params.IsSkipLongInternalTx == 1 {
 				// pcm.sl.Slog.Println("Internal TXをスキップします。")
 				return &core.Transaction{}, false

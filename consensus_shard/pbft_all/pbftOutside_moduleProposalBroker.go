@@ -76,7 +76,7 @@ func (pbom *ProposalBrokerOutsideModule) handleInjectTx(content []byte) {
 }
 
 func (pbom *ProposalBrokerOutsideModule) handleStartCLPA() {
-	fmt.Println("handleStartCLPAを受け取りました")
+	pbom.pbftNode.pl.Plog.Println("handleStartCLPAを受け取りました!!!!!")
 	pbom.pbftNode.IsStartCLPA = true
 }
 
@@ -581,7 +581,7 @@ func (pbom *ProposalBrokerOutsideModule) StartBatchProcessing(batchSize int, int
 	defer exportTicker.Stop()
 
 	// パーティション状態ログ出力用タイマー (1秒間隔)
-	partitionLogTicker := time.NewTicker(1 * time.Second)
+	partitionLogTicker := time.NewTicker(10 * time.Second)
 	defer partitionLogTicker.Stop()
 
 	for {

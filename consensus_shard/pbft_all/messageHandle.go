@@ -77,11 +77,14 @@ func (p *PbftConsensusNode) Propose() {
 				if err != nil {
 					log.Panic()
 				}
+				p.pbftStage.Store(2)
+				p.pl.Plog.Println("Propose: pbfStageが2になりました", p.pbftStage.Load())
+
 				msg_send := message.MergeMessage(message.CPrePrepare, ppbyte)
 				// Broadcast the "preprepare" / block content message to all nodes in the same shard
 				networks.Broadcast(p.RunningNode.IPaddr, p.getNeighborNodes(), msg_send)
 				networks.TcpDial(msg_send, p.RunningNode.IPaddr)
-				p.pbftStage.Store(2)
+
 			}()
 
 		case <-p.pStop:
@@ -96,7 +99,7 @@ func (p *PbftConsensusNode) Propose() {
 // and call the function: **ExtraOpInConsensus.HandleinPrePrepare**
 func (p *PbftConsensusNode) handlePrePrepare(content []byte) {
 	p.RunningNode.PrintNode()
-	fmt.Println("received the PrePrepare ...")
+	fmt.Println("received the PrePrepare ... stage=", p.pbftStage.Load())
 	// decode the message
 	ppmsg := new(message.PrePrepare)
 	err := json.Unmarshal(content, ppmsg)
@@ -141,14 +144,16 @@ func (p *PbftConsensusNode) handlePrePrepare(content []byte) {
 		if err != nil {
 			log.Panic()
 		}
+
+		// Pbft stage add 1. It means that this round of pbft goes into the next stage, i.e., Prepare stage.
+		p.pbftStage.Add(1)
+		p.pl.Plog.Println("PrePreapre: pbfStageが1増加しました", p.pbftStage.Load())
+
 		// broadcast
 		msg_send := message.MergeMessage(message.CPrepare, prepareByte)
 		networks.Broadcast(p.RunningNode.IPaddr, p.getNeighborNodes(), msg_send)
 		networks.TcpDial(msg_send, p.RunningNode.IPaddr)
 		p.pl.Plog.Printf("S%dN%d : has broadcast the prepare message \n", p.ShardID, p.NodeID)
-
-		// Pbft stage add 1. It means that this round of pbft goes into the next stage, i.e., Prepare stage.
-		p.pbftStage.Add(1)
 	}
 }
 
@@ -156,7 +161,7 @@ func (p *PbftConsensusNode) handlePrePrepare(content []byte) {
 // If you want to do more operations in the prepare stage, you can implement the interface "ExtraOpInConsensus",
 // and call the function: **ExtraOpInConsensus.HandleinPrepare**
 func (p *PbftConsensusNode) handlePrepare(content []byte) {
-	p.pl.Plog.Printf("S%dN%d : received the Prepare ...\n", p.ShardID, p.NodeID)
+	p.pl.Plog.Printf("S%dN%d : received the Prepare ... stage = %d\n", p.ShardID, p.NodeID, p.pbftStage.Load())
 	// decode the message
 	pmsg := new(message.Prepare)
 	err := json.Unmarshal(content, pmsg)
@@ -203,13 +208,14 @@ func (p *PbftConsensusNode) handlePrepare(content []byte) {
 			if err != nil {
 				log.Panic()
 			}
+			p.pbftStage.Add(1)
+			p.pl.Plog.Println("Prepare: pbfStageが1増加しました", p.pbftStage.Load())
+
 			msg_send := message.MergeMessage(message.CCommit, commitByte)
 			networks.Broadcast(p.RunningNode.IPaddr, p.getNeighborNodes(), msg_send)
 			networks.TcpDial(msg_send, p.RunningNode.IPaddr)
 			p.isCommitBordcast[string(pmsg.Digest)] = true
 			p.pl.Plog.Printf("S%dN%d : commit is broadcast\n", p.ShardID, p.NodeID)
-
-			p.pbftStage.Add(1)
 		}
 	}
 }
@@ -218,6 +224,7 @@ func (p *PbftConsensusNode) handlePrepare(content []byte) {
 // If you want to do more operations in the commit stage, you can implement the interface "ExtraOpInConsensus",
 // and call the function: **ExtraOpInConsensus.HandleinCommit**
 func (p *PbftConsensusNode) handleCommit(content []byte) {
+	p.pl.Plog.Printf("S%dN%d : received the Commit ... stage = %d\n", p.ShardID, p.NodeID, p.pbftStage.Load())
 	// decode the message
 	cmsg := new(message.Commit)
 	err := json.Unmarshal(content, cmsg)
@@ -229,6 +236,9 @@ func (p *PbftConsensusNode) handleCommit(content []byte) {
 	p.pbftLock.Lock()
 	defer p.pbftLock.Unlock()
 	for p.pbftStage.Load() < 3 && cmsg.SeqID >= p.sequenceID && p.view.Load() == curView {
+		p.pl.Plog.Println("p.pbftStage.Load()=", p.pbftStage.Load())
+		p.pl.Plog.Println("cmsg.SeqID=", cmsg.SeqID, ", p.sequenceID=", p.sequenceID)
+		p.pl.Plog.Println("p.view.Load()=", p.view.Load(), ", curView=", curView)
 		p.conditionalVarpbftLock.Wait()
 	}
 	defer p.conditionalVarpbftLock.Broadcast()

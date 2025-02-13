@@ -93,6 +93,8 @@ func (d *Supervisor) NewSupervisor(ip string, pcc *params.ChainConfig, committee
 			d.testMeasureMods = append(d.testMeasureMods, measure.NewTestTxDetail())
 		case "ALL_CLPA":
 			d.testMeasureMods = append(d.testMeasureMods, measure.NewTestModule_CLPA())
+		case "Workload":
+			d.testMeasureMods = append(d.testMeasureMods, measure.NewTestModule_Workload())
 		default:
 		}
 	}

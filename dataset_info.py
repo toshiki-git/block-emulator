@@ -19,7 +19,8 @@ def print_tx_info(csv_path, max_rows=None):
     invalid_data_count = 0
     contract_address = set()
     unique_account = set()
-    
+    address_frequency = defaultdict(int)  # アドレス出現頻度カウンタ追加
+
     # CSVファイルを開く
     with open(csv_path, mode='r') as file:
         reader = csv.reader(file)
@@ -32,10 +33,20 @@ def print_tx_info(csv_path, max_rows=None):
             
             total_rows_count += 1
             
-            # 3列目（インデックス2）と4列目（インデックス3）のアドレスを取得
+            # 3列目（インデックス3）と4列目（インデックス4）のアドレスを取得
             from_addr = row[3]
             to_addr = row[4]
             
+            # fromIsContract, toIsContractを表す列を想定（例えば6列目、7列目あたり）
+            # ここではデータ例から row[6], row[7] がfromIsContract, toIsContractとして扱う
+            if len(row) > 7:
+                from_is_contract = (row[6] == '1')
+                to_is_contract = (row[7] == '1')
+            else:
+                # CSVフォーマットが異なる場合は適宜対応
+                from_is_contract = False
+                to_is_contract = False
+
             # アドレスの正当性をチェック
             if not is_valid_address(from_addr):
                 invalid_data_count += 1
@@ -48,15 +59,17 @@ def print_tx_info(csv_path, max_rows=None):
                 continue
 
             correct_data_count += 1
-            # 8列目（インデックス7）が1のデータをカウント
-            if row[7] == '1' or row[6] == '1':
+            # コントラクトが含まれるトランザクションの場合
+            if from_is_contract or to_is_contract:
                 contract_address.add(to_addr)
                 sctx_count += 1
                 continue
-
-            # 正常なアドレスのみユニークセットに追加
-            unique_account.add(from_addr)
-            unique_account.add(to_addr)
+            else:
+                # 両方非コントラクトの場合のみカウント
+                unique_account.add(from_addr)
+                unique_account.add(to_addr)
+                address_frequency[from_addr] += 1
+                address_frequency[to_addr] += 1
 
     print("===================tx==================")
     print(f"Total Rows: {total_rows_count}")
@@ -67,6 +80,16 @@ def print_tx_info(csv_path, max_rows=None):
     print(f"SCTX Count: {sctx_count}")
     print(f"Normal tx: {correct_data_count - sctx_count}")
     print("=====================================")
+
+    # address_frequencyを出現回数降順でソート
+    sorted_addresses = sorted(address_frequency.items(), key=lambda x: x[1], reverse=True)
+    top_500 = sorted_addresses[:100]
+
+    print("=== Top 100 Non-Contract Addresses by Frequency ===")
+    for addr, freq in top_500:
+        # print(addr, freq)
+        print(addr)
+    print("===================================================")
 
 def print_itx_info(csv_path, max_rows=None):
     total_rows_count = 0
@@ -147,9 +170,9 @@ def remove_columns_and_keep_comma(input_file, output_file, columns_to_remove):
     df.to_csv(output_file, header=False, index=False)
 
 # 関数を実行する例
-# csv_path = 'selectedTxs_1000K.csv'
+csv_path = '/app/block-emulator/dataset/20000000to20249999_BlockTransaction_2M.csv'
 # csv_path_itx = 'selectedInternalTxs_1000K.csv'
-# print_tx_info(csv_path, 50000)
+print_tx_info(csv_path)
 # print_itx_info(csv_path_itx, 280742)
 
 def load_internal_txs_from_csv(csv_path):
@@ -187,5 +210,5 @@ def load_internal_txs_from_csv(csv_path):
 # columns_to_remove = [0, 1, 9, 10]
 # remove_columns_and_keep_comma(input_file, output_file, columns_to_remove)
 
-csv_path = './dataset/selectedInternalTxs_1000K.csv'
-load_internal_txs_from_csv(csv_path)
+# csv_path = './dataset/selectedInternalTxs_1000K.csv'
+# load_internal_txs_from_csv(csv_path)

@@ -576,7 +576,7 @@ func (prom *ProposalRelayOutsideModule) StartBatchProcessing(batchSize int, inte
 	defer exportTicker.Stop()
 
 	// パーティション状態ログ出力用タイマー (1秒間隔)
-	partitionLogTicker := time.NewTicker(1 * time.Second)
+	partitionLogTicker := time.NewTicker(10 * time.Second)
 	defer partitionLogTicker.Stop()
 
 	for {

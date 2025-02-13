@@ -57,6 +57,7 @@ func BuildSupervisor(nnm, snm uint64) {
 		measureMod = append(measureMod, "ALL_CLPA")
 	}
 	measureMod = append(measureMod, "Tx_Details")
+	measureMod = append(measureMod, "Workload")
 
 	lsn := new(supervisor.Supervisor)
 	lsn.NewSupervisor(params.SupervisorAddr, initConfig(123, nnm, 123, snm), params.CommitteeMethod[methodID], measureMod...)
